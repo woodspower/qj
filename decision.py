@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
+import re
+import random
 import logging
 import time
 import numpy as np
@@ -14,7 +16,7 @@ from collections import OrderedDict
 from object_detection.utils import label_map_util
 
 logging.basicConfig(filename='command.log', level=logging.DEBUG)
-LABEL_MAP_FILE = os.path.join('/home/leo/qj/object_detection/data/pascal_label_map.pbtxt')
+LABEL_MAP_FILE = os.path.join('/home/leo/qj/object_detection/index_data/pascal_label_map.pbtxt')
 
 label2id_map = label_map_util.get_label_map_dict(LABEL_MAP_FILE)
 
@@ -27,7 +29,7 @@ for key in label2id_map.keys():
 DECISION_PERIOD_JUMP_MINIMUM = 8
 
 start_time = datetime.datetime.now()
-last_decision_time = datetime.datetime.now()
+gLastDecisionTime = datetime.datetime.now()
 
 conn = sqlite3.connect('file:qjdb?mode=memory&cache=shared') 
 
@@ -91,11 +93,17 @@ def load_cmdbook(bookpath):
                             cunit[u'Name'])
                 if kunit.has_key(u'GoBack'):
                     for cunit in kunit[u'GoBack']:
-                        for check in [u'DecisionPeriod',u'StartTag',\
-                                      u'StartOffset',u'EndTag',\
-                                      u'EndOffset',u'Duration']:
-                            assert cunit.has_key(val), \
-                                "%s not in file:%s-[%s], \
+                        # Doing the type check
+                        for check in [(u'DecisionPeriod', float),\
+                                      (u'StartTag',list),\
+                                      (u'StartOffset',list),\
+                                      (u'EndTag',list),\
+                                      (u'EndOffset',list),\
+                                      (u'Duration',str)]:
+                            try:
+                                check[1](check[0])
+                            except: 
+                                print "%s wrong in file:%s-[%s], \
                                 [u'KeyBody']-[%s], \
                                 [u'GoBack']-[%s])"\
                                 %(val,fname,\
@@ -104,14 +112,14 @@ def load_cmdbook(bookpath):
                                 cunit[u'Name'])
             
     
-def decision_do(detection_time, tags):
-    global last_decision_time
-    current_time = datetime.datetime.now()
+def decision_do(detection_time, tags, bookname):
+    global gLastDecisionTime
+    correct_decision = False
     detection_time = datetime.datetime.strptime(detection_time, "%y:%m:%d:%H:%M:%S:%f")
-    delta = (detection_time - last_decision_time).total_seconds()*1000
-    print("delta is: %s ms"%(delta))
+    delta = (detection_time - gLastDecisionTime).total_seconds()*1000
+    print("delta is: %f ms"%(delta))
     if(delta <= 0):
-        return
+        return correct_decision
 
     image_size = tags['image_size']
     boxes = tags['tag_boxes']
@@ -119,6 +127,7 @@ def decision_do(detection_time, tags):
     classes = tags['tag_classes']
     num = tags['tag_num']
 
+    #store the detected object index position in tags
     pos_dict = {}
     for label_name in label2id_map:
         pos_dict[label_name] = []
@@ -129,13 +138,13 @@ def decision_do(detection_time, tags):
             break 
         pos_dict[id2label_map[classes[i]]].append(i)
     
-    # Loop the Index book
-    logging.info('Loop the Index book')
-    for bunit in gBookDict[u'Index']:
+    # Loop the book
+    logging.info('Loop the book')
+    for bunit in gBookDict[bookname]:
         for kunit in bunit['KeyBody']:
             # Check conditions is ok or not.
-            logging.info('Check condition for Index[%s][%s]'\
-                        %(bunit[u'Name'],kunit[u'Name']))
+            logging.info('Check condition [%s][%s][%s]'\
+                        %(bookname, bunit[u'Name'],kunit[u'Name']))
             disallow_result = False
             allow_result = False
             for cond in kunit[u'Conditions']:
@@ -169,157 +178,179 @@ def decision_do(detection_time, tags):
             if disallow_result or not allow_result:
                 continue
             # kunit condition is ok, do the action.
-            print('Condition for Index[%s][%s] is ready...'\
-                        %(bunit[u'Name'],kunit[u'Name']))
-            for actunit in kunit[u'Actions']:
-                decision_period = actunit[u'DecisionPeriod']
-                if(delta < decision_period):
-                    print("Delta:%f is less than DecisionPeriod:%f"%(delta, float(decision_period)))
-                    logging.info("Delta:%f is less than DecisionPeriod:%f"%(delta, float(decision_period)))
-                    continue
-                else:
-                    print("Do action:", kunit[u'Actions'])
-                    logging.info('Do actions: %s'%(str(kunit[u'Actions'])))
-                    last_decision_time = current_time
-            return
+            logging.info('Condition is ready...')
+            correct_decision=True
+            do_action(bunit, kunit, tags, pos_dict)
+    return correct_decision
             
-                
+
+def do_action(bunit, kunit, tags, pos_dict):
+    global gLastDecisionTime
+
+    for action in kunit[u'Actions']:
+        current_time = datetime.datetime.now()
+        logging.info('entering action: %s'%(str(action)))
+        delta = (current_time - gLastDecisionTime).total_seconds()*1000
+        decision_period = float(action[u'DecisionPeriod'])
+        if(delta < decision_period):
+            logging.info('delay this action since delta:%f < decision period:%f'%(delta, decision_period))
+            continue
+        if action[u'Command'] == u'Click':
+            do_action_click(action, tags, pos_dict)
+        elif action[u'Command'] == u'Goto':
+            do_action_goto(action, tags, pos_dict)
+        else:
+            logging.info('this action is tbd....')
+            continue
+            
+def do_action_goto(action, tags, pos_dict):
+    global gLastDecisionTime
+    # Nested call decision_loop('GotoBook')
+    # If the 'GotoBook' find nothing, will come back to UpperBook.
+    bookname = action[u'BookName']
+    decision_loop(bookname)
+    logging.info('End Loop inside book: %s'%(bookname))
 
 
-    
-	
-def decision_loop(): 
-    while True:
-        cursor = conn.cursor() 
-        cursor.execute("select * from tags where key='latest'")
-        query = cursor.fetchone()
-        if not query:
-            cursor.close()
-            print('no data in db')
-            return
-        key, newflag, detection_time, s = query
-        tags = pickle.loads(s)
-        # print('tags:' , tags)
-        if(tags["tag_num"] == 0):
-            print('tag is not init in db')
-            return
-        decision_do(detection_time, tags)
-        time.sleep(1)
-
-
-    image_size = tags['image_size']
+def do_action_click(action, tags, pos_dict):
+    global gLastDecisionTime
+    im_width, im_height = tags['image_size']
     boxes = tags['tag_boxes']
     scores = tags['tag_scores']
     classes = tags['tag_classes']
     num = tags['tag_num']
 
+    print("==========================boxes========================\n")
+    print(boxes)
+    print("==========================scores========================\n")
+    print(scores)
+    print("==========================classes========================\n")
+    print(classes)
+    print("==========================num========================\n")
+    print(num)
+    print("==========================pos_dict========================\n")
+    print(pos_dict)
+    print("==========================image_size========================\n")
+    print(tags['image_size'])
 
-#    boxes = np.squeeze(boxes).tolist()
-#    scores = np.squeeze(scores).tolist()
-#    classes = np.squeeze(classes).astype(np.int32).tolist()
-#    num = num.astype(np.int32).tolist()[0]
-
-    im_width, im_height = image_size
-#    print("image size is:", im_width, im_height)
-#
-#    print("==========================boxes========================\n")
-#    print(boxes)
-#    print("==========================scores========================\n")
-#    print(scores)
-#    print("==========================classes========================\n")
-#    print(classes)
-#    print("==========================num========================\n")
-#    print(num)
-
-    #find first position which equal to class actor(=1)
-    actor_class = label2id_map['actor']
-    score_class = label2id_map['score']
-    actor_index = classes.index(actor_class)
-    ymin,xmin,ymax,xmax = boxes[actor_index]
-    actor_y_norm = ymax
-    actor_x_norm = xmin + (xmax - xmin)/2.0
-    
-    #force the actor to be drawed by change the possibility to 100%
-    scores[actor_index] = 1.0
-    
-    #find target object position which has minimum y value of the screen
-    target_index = -1
-    target_y_norm = 1
-    target_x_norm = 0
-    #box should have minimun 60% possibility
-    min_score_thresh = .6
-    for i in range(num):
-        #target object should not be same as actor
-        if((classes[i] == actor_class) or (classes[i] == score_class)):
-            continue
-        if(scores[i]<min_score_thresh): 
-            break 
-        ymin,xmin,ymax,xmax = boxes[i]
-        y_norm = ymin + (ymax - ymin)/2.0
-        if(y_norm < target_y_norm):
-            target_y_norm = y_norm
-            target_index = i
-            target_x_norm = xmin + (xmax - xmin)/2.0
-    if( target_index == -1):
-        print("target not found.")
+    #find click start point where first StartTag[...] match
+    start_key = ''
+    for key in action[u'StartTag']:
+        if pos_dict.has_key(key):
+            start_key = key
+            break
+    if not start_key:
+        logging.info('action cancel since no match StartTag : %s'%(str(action[u'StartTag'])))
         return
-    target_class = classes[target_index]
+    #find click start point
+    #start point will caculate from center point of the start_key
+    #x = ( rxmin + rxoffset*(rxmax-rxmin) )*im_width
+    #y = ( rymin + ryoffset*(rymax-rymin) )*im_height
+    #default offset is (1/2, 1/2) in the center of box
+    #all the unit start with 'r' means relative distance
+    rxoffset, ryoffset = 0.5, 0.5
+    rymin,rxmin,rymax,rxmax = boxes[pos_dict[start_key][0]]
+    yrand = random.random()*(rymax-rymin)*0.01
+    xrand = random.random()*(rxmax-rxmin)*0.01
+    if action[u'StartOffset']:
+        (rxoffset, ryoffset) = action[u'StartOffset']
+    xstart = int((rxmin + rxoffset*(rxmax-rxmin) + xrand)*im_width)
+    ystart = int((rymin + ryoffset*(rymax-rymin) + yrand)*im_height)
+    logging.debug('[start point] key:%s, rxmin:%f, rymin:%f, rxmax:%f, rymax:%f, \
+                    rxoffset:%f, ryoffset:%f, xstart:%d, ystart:%d'%\
+                    (start_key, rxmin, rymin, rxmax, rymax, \
+                    rxoffset, ryoffset, xstart, ystart))
 
-    actor = (actor_class, actor_y_norm*im_height, actor_x_norm*im_width)
-    target = (target_class, target_y_norm*im_height, target_x_norm*im_width)
-
-    print("==========================Actor Judgement========================\n")
-    print("actor index is:", actor_index)
-    print("actor class is:", actor_class)
-    print("actor pos is:", actor_y_norm, actor_x_norm)
-
-    print("==========================Target Judgement========================\n")
-    print("target index is:", target_index)
-    print("target class is:", target_class)
-    print("target pos is:", target_y_norm, target_x_norm)
-
-
-    distance = (target[2]-actor[2])**2 + (target[1]-actor[1])**2
-    distance = distance ** 0.5
-    print('auto distance = ', distance)
-    
-    if(distance <=500):
-        press_time = distance * 1.
+    #find click end point where first EndTag[...] match
+    end_key = ''
+    for key in action[u'EndTag']:
+        if pos_dict.has_key(key):
+            end_key = key
+            break
+    if not end_key:
+        xend = xstart
+        yend = ystart
     else:
-        press_time = 500*1. + distance-500
-    x1 = np.random.randint(600,700)
-    x2 = x1 + np.random.randint(0,5)
-    y1 = np.random.randint(2000,2100)
-    y2 = y1 + np.random.randint(0,5)
-    press_time = int(press_time)
-    cmd = 'adb shell input swipe %d %d %d %d '%(x1,y1,x2,y2) + str(press_time)
+        #find click end point
+        #end point will caculate from center point of the end_key
+        #x = end_key.x + end_key.len_x/2 * rxoffset
+        #y = end_key.y + end_key.len_y/2 * ryoffset
+        #end point offset default is equal to start offset
+        rymin,rxmin,rymax,rxmax = boxes[pos_dict[end_key][0]]
+        yrand = random.random()*(rymax-rymin)*0.01
+        xrand = random.random()*(rxmax-rxmin)*0.01
+        if action[u'EndOffset']:
+            (rxoffset, ryoffset) = action[u'EndOffset']
+        xend = int((rxmin + rxoffset*(rxmax-rxmin) + xrand)*im_width)
+        yend = int((rymin + ryoffset*(rymax-rymin) + yrand)*im_height)
+        logging.debug('[end point] key:%s, rxmin:%f, rymin:%f, rxmax:%f, rymax:%f, \
+                        rxoffset:%f, ryoffset:%f, xend:%d, yend:%d'%\
+                        (end_key, rxmin, rymin, rxmax, rymax, \
+                        rxoffset, ryoffset, xend, yend))
+    #get how many millisecond to swipe
+    #it will be a random value like 2~5, default is 10~50ms
+    duration_range = parse_range(action[u'Duration'])
+    if not duration_range:
+        duration_range = [10, 50]
+    duration = random.randint(duration_range[0], duration_range[1])
+    # do it
+    logging.info('click start from box:%s, xstart:%d, ystart:%d,\
+                   end to box:%s, xend:%d, yend:%d,\
+                   duration:%d'%\
+                   (start_key, xstart, ystart,\
+                    end_key, xend, yend, duration))
+    cmd = '/opt/genymobile/genymotion/tools/adb shell input swipe %d %d %d %d '%(xstart,ystart,xend,yend) + str(duration)
     print(cmd)
     os.system(cmd)
-
-    if(delta < DECISION_PERIOD_JUMP_MINIMUM):
-        cursor.close()
-        print('current_time is:', current_time)
-        print('detection_time is:', detection_time)
-        print('last_decision_time is:', last_decision_time)
-        return
+    gLastDecisionTime = datetime.datetime.now()
+    
+# range format should be a string like '2~5' or '3'
+def parse_range(fromto):
+    l = re.split('~', fromto)
+    if not l:
+        return []
+    assert len(l)<=2,'Format err:%s'%(fromto)
+    # not digit, it is comments field
+    if not l[0].isdigit():
+        return []
+    if len(l)==1:
+        # format like '303 '
+        f,t = int(l[0]),int(l[0])
     else:
-#        cursor.execute("update tags set timestamp=? where key = 'latest'", (current_time_str,))
-#        cursor.close()
-#        conn.commit()
-        last_decision_time = current_time
+        # format like '303~ 307' or '303~303'
+        f,t = int(l[0]),int(l[1])
+    assert f<=t, 'Format err:%s'%(fromto)
+    return [f,t]
 
-#    if(newflag == 'no'):
-#        cursor.close()
-#        print('flag is not new in db')
-#        return
-#    else:
-#        cursor.execute("update tags set newflag='no'")
-#        cursor.close()
-#        conn.commit()
-#    cursor.execute("select * from tags")
-#    if(cursor.rowcount < 1):
-#        print('no data in db:' , cursor.rowcount)
-#        return
+
+def decision_loop(bookname=u'Index'): 
+    logging.info('Start Loop inside book: %s'%(bookname))
+    while True:
+        cursor = conn.cursor() 
+        cursor.execute("select * from tags where key=?",(bookname,))
+        query = cursor.fetchone()
+        if not query:
+            cursor.close()
+            logging.info('db:%s is no data'%(bookname))
+            #subbook will be terminated
+            if(bookname!=u'Index'):
+                break
+            #Index book will be conitnued
+            time.sleep(1)
+            continue
+        key, newflag, detection_time, s = query
+        tags = pickle.loads(s)
+        # print('tags:' , tags)
+        if(tags["tag_num"] == 0):
+            logging.info('tag is not init in db:%s'%(bookname))
+            time.sleep(1)
+            continue
+        correct = decision_do(detection_time, tags, bookname)
+        #subbook will be terminated if meet with incorrect decision
+        if(bookname!=u'Index' and correct==False):
+            break
+        time.sleep(1)
+
 
 
 load_cmdbook('./qj_book')
