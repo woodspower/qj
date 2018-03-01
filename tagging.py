@@ -20,6 +20,7 @@ import pickle
 
 
 IMAGE_FILE = os.path.join(os.getenv("HOME"), 'aiswap/qj/snapshot.png')
+gBook = u'Index'
 
 start_time = datetime.datetime.now()
 
@@ -30,14 +31,14 @@ try:
 except: 
     print('Table user do not existing') 
  
-#key: what kind of record. current only have 'latest' type
+#key: what kind of record. current only have gBook type
 #newflag: when a new image is processed, this flag will set to 'yes'
 #s: result from tensorflow detection function, serilized to store in db
 cursor.execute('create table tags (key varchar(20) primary key, newflag varchar(20), timestamp varchar(30), s BLOB)')
 
 tags = {'image_size':0, 'tag_boxes':0, 'tag_scores':0, 'tag_classes':0, 'tag_num':0}
 s = pickle.dumps(tags)
-cursor.execute("insert into tags (key, newflag, timestamp, s) values (\'latest\', \'no\', ?, ?)", (datetime.datetime.strftime(start_time, "%y:%m:%d:%H:%M:%S:%f"), sqlite3.Binary(s),))
+cursor.execute("insert into tags (key, newflag, timestamp, s) values (?, \'no\', ?, ?)", (gBook, datetime.datetime.strftime(start_time, "%y:%m:%d:%H:%M:%S:%f"), sqlite3.Binary(s),))
 cursor.close()
 conn.commit()
 
@@ -100,7 +101,7 @@ def updatefig(*args):
         current_time = datetime.datetime.now()
 
         cursor = conn.cursor() 
-        cursor.execute("update tags set s=?, newflag='yes', timestamp=? where key = 'latest'", (sqlite3.Binary(s),datetime.datetime.strftime(current_time, "%y:%m:%d:%H:%M:%S:%f"),))
+        cursor.execute("update tags set s=?, newflag='yes', timestamp=? where key = ?", (sqlite3.Binary(s),datetime.datetime.strftime(current_time, "%y:%m:%d:%H:%M:%S:%f"),gBook,))
 
 
         cursor.close()
