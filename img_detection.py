@@ -65,7 +65,7 @@ from utils import visualization_utils as vis_util
 
 # What model to download.
 MODEL_PATH_PREFIX = '/home/leo/qj/object_detection'
-MODEL_PATH        = os.path.join(MODEL_PATH_PREFIX, 'frcnn_inference_graph')
+MODEL_PATH        = os.path.join(MODEL_PATH_PREFIX, 'index_inference')
 LABEL_PATH        = os.path.join(MODEL_PATH_PREFIX, 'data')
 
 
