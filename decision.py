@@ -15,15 +15,9 @@ from collections import OrderedDict
 
 from object_detection.utils import label_map_util
 
+from img_detection import Detector
+
 logging.basicConfig(filename='command.log', level=logging.DEBUG)
-LABEL_MAP_FILE = os.path.join('/home/leo/qj/object_detection/index_data/pascal_label_map.pbtxt')
-
-label2id_map = label_map_util.get_label_map_dict(LABEL_MAP_FILE)
-
-id2label_map = {}
-for key in label2id_map.keys():
-    val = label2id_map[key]
-    id2label_map[val] = key
 
 # minimum 3 seconds between each decision 
 DECISION_PERIOD_JUMP_MINIMUM = 8
@@ -31,7 +25,14 @@ DECISION_PERIOD_JUMP_MINIMUM = 8
 start_time = datetime.datetime.now()
 gLastDecisionTime = datetime.datetime.now()
 
-conn = sqlite3.connect('file:qjdb?mode=memory&cache=shared') 
+
+IMAGE_FILE = os.path.join(os.getenv("HOME"), 'aiswap/qj/snapshot.png')
+
+def pull_screenshot():
+#    ret = os.system('/opt/genymobile/genymotion/tools/adb shell screencap -p > %s'%(IMAGE_FILE))
+    ret = os.system('/opt/genymobile/genymotion/tools/adb shell screencap -p /sdcard/snapshot.png')
+    ret = os.system('/opt/genymobile/genymotion/tools/adb pull /sdcard/snapshot.png %s'%(IMAGE_FILE))
+    return ret>>8
 
 def print_delta_time(tagname):
     global start_time
@@ -40,25 +41,39 @@ def print_delta_time(tagname):
     start_time = current_time
     print(tagname, " : ", delta_time.seconds)
 
-gBookDict = {}
+gBooks = {}
 def load_cmdbook(bookpath):
-    global gBookDict
+    global gBooks
     # Read input file
     for fname in os.listdir(bookpath):
         if not fname.endswith(".cmd"):
             continue
 
+        print 'load cmdbook:', fname
         logging.info('Loading book: %s'%(fname))
         fin = open(os.path.join(bookpath,fname), 'r')
         d = json.load(fin, object_pairs_hook=OrderedDict)
         fin.close()
-        # Filename should be same as book key name
-        book = os.path.splitext(fname)[0]
-        assert not gBookDict.has_key(book), \
-            "book %s is duplicate in file:%s"%(book,fname)
-        gBookDict[book] = d[book]
+        bookname = d['Name']
+        assert not gBooks.has_key(bookname), \
+            "book %s is duplicate in file:%s"%(bookname,fname)
+        book = {}
+        gBooks[bookname] = book
+
+        # load label map
+        label2id_map = label_map_util.get_label_map_dict(d['LabelMapFile'])
+        id2label_map = {}
+        for key in label2id_map.keys():
+            val = label2id_map[key]
+            id2label_map[val] = key
+        book['label2id_map'] = label2id_map
+        book['id2label_map'] = id2label_map
+
+        # load main book unit
+        # each book include a sequence of decision book unit
+        book['Sequence'] = d['Sequence']
         # Check valid of the book
-        for bunit in d[book]:
+        for bunit in d['Sequence']:
             for kunit in bunit[u'KeyBody']:
                 check_dict = {u'Allow':[u'Percent',u'Tags'],\
                               u'Disallow':[u'Tags']}
@@ -110,12 +125,13 @@ def load_cmdbook(bookpath):
                                 bunit[u'Name'],\
                                 kunit[u'Name'],\
                                 cunit[u'Name'])
+        # load a detector
+        book['Detector'] = Detector(book, d['InferenceFile'], d['LabelMapFile'])
             
     
-def decision_do(detection_time, tags, bookname):
+def decision_do(detection_time, tags, bookname, pos_dict):
     global gLastDecisionTime
     correct_decision = False
-    detection_time = datetime.datetime.strptime(detection_time, "%y:%m:%d:%H:%M:%S:%f")
     delta = (detection_time - gLastDecisionTime).total_seconds()*1000
     print("delta is: %f ms"%(delta))
     if(delta <= 0):
@@ -127,20 +143,11 @@ def decision_do(detection_time, tags, bookname):
     classes = tags['tag_classes']
     num = tags['tag_num']
 
-    #store the detected object index position in tags
-    pos_dict = {}
-    for label_name in label2id_map:
-        pos_dict[label_name] = []
-    #box should have minimun 60% possibility
-    min_score_thresh = .6
-    for i in range(num):
-        if(scores[i]<min_score_thresh): 
-            break 
-        pos_dict[id2label_map[classes[i]]].append(i)
-    
+    book = gBooks[bookname]
+
     # Loop the book
     logging.info('Loop the book')
-    for bunit in gBookDict[bookname]:
+    for bunit in book['Sequence']:
         for kunit in bunit['KeyBody']:
             # Check conditions is ok or not.
             logging.info('Check condition [%s][%s][%s]'\
@@ -325,27 +332,41 @@ def parse_range(fromto):
 
 def decision_loop(bookname=u'Index'): 
     logging.info('Start Loop inside book: %s'%(bookname))
+    if not gBooks.has_key(bookname):
+        logging.info('book:%s do not exist'%(bookname))
+        time.sleep(1)
+        return
+    book = gBooks[bookname]
     while True:
-        cursor = conn.cursor() 
-        cursor.execute("select * from tags where key=?",(bookname,))
-        query = cursor.fetchone()
-        if not query:
-            cursor.close()
-            logging.info('db:%s is no data'%(bookname))
+        print_delta_time("Call pull")
+        if(pull_screenshot() != 0):
+            print 'call screenshot failed, sleep 5s'
+            time.sleep(5)
+            continue
+        print_delta_time("After Call pull")
+        (image_np, image_size, tag_boxes, tag_scores, tag_classes, tag_num) = book['Detector'].detect(IMAGE_FILE)
+        tags = {'image_size':image_size, 'tag_boxes':tag_boxes, 'tag_scores':tag_scores, 'tag_classes':tag_classes, 'tag_num':tag_num}
+        print_delta_time("After Call detection")
+        #store the detected object index position in tags
+        pos_dict = {}
+        for label_name in book['label2id_map']:
+            pos_dict[label_name] = []
+        #box should have minimun 60% possibility
+        min_score_thresh = .6
+        for i in range(tag_num):
+            if(tag_scores[i]<min_score_thresh): 
+                break 
+            pos_dict[book['id2label_map'][tag_classes[i]]].append(i)
+
+        if not pos_dict:
+            logging.info('book:%s do not detect any tags'%(bookname))
             #subbook will be terminated
             if(bookname!=u'Index'):
                 break
             #Index book will be conitnued
             time.sleep(1)
             continue
-        key, newflag, detection_time, s = query
-        tags = pickle.loads(s)
-        # print('tags:' , tags)
-        if(tags["tag_num"] == 0):
-            logging.info('tag is not init in db:%s'%(bookname))
-            time.sleep(1)
-            continue
-        correct = decision_do(detection_time, tags, bookname)
+        correct = decision_do(datetime.datetime.now(), tags, bookname, pos_dict)
         #subbook will be terminated if meet with incorrect decision
         if(bookname!=u'Index' and correct==False):
             break
