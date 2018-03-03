@@ -6,7 +6,7 @@ import os
 import time
 import numpy as np
 
-import img_detection as detector
+from img_detection import detector
 
 
 import matplotlib.pyplot as plt
