@@ -1,5 +1,8 @@
 {
-    "Main": [
+    "Name": "Main",
+    "InferenceFile":"/home/leo/qj/object_detection/data/Main/inference_frcnn/frozen_inference_graph.pb",
+    "LabelMapFile":"/home/leo/qj/object_detection/data/Main/pascal_label_map.pbtxt",
+    "Sequence": [
         {
             "Name": "Follow Guider",
             "KeyBody": [
@@ -23,14 +26,14 @@
                     ],
                     "Actions": [
                         {
-                            "Name": "P(-1/4w,1/2h)",
+                            "Name": "P(-1/2w,1/2h)",
                             "Command": "Click",
                             "DecisionPeriod": 1000,
                             "StartTag": [
                                 "LeftArrow"
                             ],
                             "StartOffset": [
-                                -0.25,
+                                -0.5,
                                 0.5
                             ],
                             "EndTag": [],
@@ -59,14 +62,14 @@
                     ],
                     "Actions": [
                         {
-                            "Name": "P(5/4w,1/2h)",
+                            "Name": "P(3/2w,1/2h)",
                             "Command": "Click",
                             "DecisionPeriod": 1000,
                             "StartTag": [
                                 "RightArrow"
                             ],
                             "StartOffset": [
-                                1.25,
+                                1.5,
                                 0.5
                             ],
                             "EndTag": [],
@@ -95,7 +98,7 @@
                     ],
                     "Actions": [
                         {
-                            "Name": "P(1/2w,-1/4h)",
+                            "Name": "P(1/2w,-1/2h)",
                             "Command": "Click",
                             "DecisionPeriod": 1000,
                             "StartTag": [
@@ -103,7 +106,7 @@
                             ],
                             "StartOffset": [
                                 0.5,
-                                -0.25
+                                -0.5
                             ],
                             "EndTag": [],
                             "EndOffset": [],
@@ -131,7 +134,7 @@
                     ],
                     "Actions": [
                         {
-                            "Name": "DownArrow",
+                            "Name": "P(1/2w,3/2h)",
                             "Command": "Click",
                             "DecisionPeriod": 1000,
                             "StartTag": [
@@ -139,7 +142,7 @@
                             ],
                             "StartOffset": [
                                 0.5,
-                                1.25
+                                1.5
                             ],
                             "EndTag": [],
                             "EndOffset": [],
@@ -287,101 +290,6 @@
                             "Duration": "2~5"
                         }
                     ]
-                }
-            ]
-        },
-        {
-            "Name": "",
-            "Conditions": [
-                {
-                    "Name": "",
-                    "Allow": [
-                        {
-                            "Name": "",
-                            "Percent": 1.0,
-                            "Tags": [
-                                "Actor",
-                                "mVIPLevel",
-                                "mBag"
-                            ]
-                        },
-                        {
-                            "Name": "",
-                            "Percent": 0.6,
-                            "Tags": [
-                                "Actor",
-                                "mVIPLevel",
-                                "mBag",
-                                "mTeam",
-                                "mPowerScore",
-                                "mBeStronger",
-                                "mMIC",
-                                "mChat",
-                                "mBroadcast",
-                                "mLock",
-                                "mCamera",
-                                "mRide",
-                                "mFriend",
-                                "mTimeState",
-                                "mExpStat",
-                                "mMap",
-                                "mMail",
-                                "mBlood",
-                                "mMagic",
-                                "mProfile",
-                                "mTask",
-                                "mTeamInfo",
-                                "mTaskMajorInfo",
-                                "mTaskOtherInfo",
-                                "mHideTaskCtl",
-                                "mActorLevel",
-                                "gWonderActive",
-                                "gFirstPayGift",
-                                "gGift",
-                                "gActive",
-                                "gSocial",
-                                "gOpenGift",
-                                "gOpenParty",
-                                "mKillState",
-                                "gControlA"
-                            ]
-                        }
-                    ],
-                    "Disallow": []
-                }
-            ],
-            "Actions": [
-                {
-                    "Name": "",
-                    "Command": "Click",
-                    "DecisionPeriod": 5000,
-                    "StartTag": [
-                        "tZhuXian"
-                    ],
-                    "StartOffset": [
-                        0,
-                        0
-                    ],
-                    "EndTag": [],
-                    "EndOffset": [],
-                    "Duration": "2~5"
-                }
-            ],
-            "GoBack": [
-                {
-                    "Name": "",
-                    "Interruptible": true,
-                    "DecisionPeriod": "5000",
-                    "StartTag": [
-                        "mGoBack"
-                    ],
-                    "StartOffset": [
-                        0,
-                        0
-                    ],
-                    "EndTag": [],
-                    "EndOffset": [],
-                    "Duration": "2~5"
                 }
             ]
         }
