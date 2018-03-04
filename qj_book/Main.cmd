@@ -170,13 +170,13 @@
                     ],
                     "Actions": [
                         {
-                            "Name": "P(0, 0)",
+                            "Name": "P(-1/2w,-1/2h)",
                             "Command": "Click",
                             "DecisionPeriod": 1000,
                             "StartTag": [
                                 "LeftUpArrow"
                             ],
-                            "StartOffset": [],
+                            "StartOffset": [-0.5, -0.5],
                             "EndTag": [],
                             "EndOffset": [],
                             "Duration": "2~5"
@@ -203,15 +203,15 @@
                     ],
                     "Actions": [
                         {
-                            "Name": "P(1., 0)",
+                            "Name": "P(1.5, -0.5)",
                             "Command": "Click",
                             "DecisionPeriod": 1000,
                             "StartTag": [
                                 "RightUpArrow"
                             ],
                             "StartOffset": [
-                                1.0,
-                                0
+                                1.5,
+                               -0.5 
                             ],
                             "EndTag": [],
                             "EndOffset": [],
@@ -239,15 +239,15 @@
                     ],
                     "Actions": [
                         {
-                            "Name": "P(0, 1.)",
+                            "Name": "P(-0.5, 1.5)",
                             "Command": "Click",
                             "DecisionPeriod": 1000,
                             "StartTag": [
                                 "LeftDownArrow"
                             ],
                             "StartOffset": [
-                                0,
-                                1.0
+                               -0.5,
+                                1.5
                             ],
                             "EndTag": [],
                             "EndOffset": [],
@@ -275,15 +275,15 @@
                     ],
                     "Actions": [
                         {
-                            "Name": "P(1., 1.)",
+                            "Name": "P(1.5, 1.5)",
                             "Command": "Click",
                             "DecisionPeriod": 1000,
                             "StartTag": [
                                 "RightDownArrow"
                             ],
                             "StartOffset": [
-                                1.0,
-                                1.0
+                                1.5,
+                                1.5
                             ],
                             "EndTag": [],
                             "EndOffset": [],
