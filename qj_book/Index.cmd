@@ -52,7 +52,7 @@
                     ],
                     "Actions": [
                         {
-                            "Name": "Click center",
+                            "Name": "Click bottom at first",
                             "Command": "Click",
                             "DecisionPeriod": 1000,
                             "StartTag": ["Movie"],
@@ -91,15 +91,34 @@
                     ],
                     "Actions": [
                         {
-                            "Name": "Click TaskBar",
-                            "Command": "Click",
-                            "DecisionPeriod": 5000,
-                            "StartTag": ["Main"],
-                            "StartOffset": [0.1076, 0.2715],
-                            "EndTag": [],
-                            "EndOffset": [],
-                            "Duration": "2~5"
-                        },
+                            "Name": "Then Goto...",
+                            "Command": "Goto",
+                            "DecisionPeriod": 0,
+                            "BookName": "Main"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "Name": "If any other fight GUI",
+            "KeyBody": [
+                {
+                    "Name": "Use Main temporary",
+                    "Conditions": [
+                        {
+                            "Name": "",
+                            "Allow": [
+                                {
+                                    "Name": "",
+                                    "Percent": 0.01,
+                                    "Tags": ["EnforceMenu", "CopierMenu", "ActorMenu", "WingMenu"]
+                                }
+                            ],
+                            "Disallow": []
+                        }
+                    ],
+                    "Actions": [
                         {
                             "Name": "Then Goto...",
                             "Command": "Goto",
