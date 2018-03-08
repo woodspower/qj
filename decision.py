@@ -135,7 +135,8 @@ def decision_do(detection_time, tags, bookname, pos_dict):
     delta = (detection_time - gLastDecisionTime).total_seconds()*1000
     print("delta is: %f ms"%(delta))
     if(delta <= 0):
-        return correct_decision
+        # Need try again later
+        return True
 
     image_size = tags['image_size']
     boxes = tags['tag_boxes']
@@ -227,18 +228,18 @@ def do_action_click(action, tags, pos_dict):
     classes = tags['tag_classes']
     num = tags['tag_num']
 
-    print("==========================boxes========================\n")
-    print(boxes)
-    print("==========================scores========================\n")
-    print(scores)
-    print("==========================classes========================\n")
-    print(classes)
-    print("==========================num========================\n")
-    print(num)
-    print("==========================pos_dict========================\n")
-    print(pos_dict)
-    print("==========================image_size========================\n")
-    print(tags['image_size'])
+#    print("==========================boxes========================\n")
+#    print(boxes)
+#    print("==========================scores========================\n")
+#    print(scores)
+#    print("==========================classes========================\n")
+#    print(classes)
+#    print("==========================num========================\n")
+#    print(num)
+#    print("==========================pos_dict========================\n")
+#    print(pos_dict)
+#    print("==========================image_size========================\n")
+#    print(tags['image_size'])
 
     #find click start point where first StartTag[...] match
     start_key = ''
@@ -331,13 +332,14 @@ def parse_range(fromto):
 
 
 def decision_loop(bookname=u'Index'): 
-    logging.info('Start Loop inside book: %s'%(bookname))
     if not gBooks.has_key(bookname):
         logging.info('book:%s do not exist'%(bookname))
         time.sleep(1)
         return
     book = gBooks[bookname]
     while True:
+        print('Loop inside book: %s'%(bookname))
+        logging.info('Loop inside book: %s'%(bookname))
         print_delta_time("Call pull")
         if(pull_screenshot() != 0):
             print 'call screenshot failed, sleep 5s'
@@ -352,7 +354,7 @@ def decision_loop(bookname=u'Index'):
         for label_name in book['label2id_map']:
             pos_dict[label_name] = []
         #box should have minimun 60% possibility
-        min_score_thresh = .6
+        min_score_thresh = .1
         for i in range(tag_num):
             if(tag_scores[i]<min_score_thresh): 
                 break 
@@ -366,9 +368,22 @@ def decision_loop(bookname=u'Index'):
             #Index book will be conitnued
             time.sleep(1)
             continue
+
+        print("==========================image_size========================\n")
+        print('book:',bookname)
+        print(tags['image_size'])
+#        print("==========================pos_dict========================\n")
+#        print(pos_dict)
+        for name in pos_dict:
+            if pos_dict[name]:
+                print 'found tag name:', name
+                for pos in pos_dict[name]:
+                    print 'tag score:', tag_scores[pos]
+                    print 'tag boxe:', tag_boxes[pos]
         correct = decision_do(datetime.datetime.now(), tags, bookname, pos_dict)
         #subbook will be terminated if meet with incorrect decision
         if(bookname!=u'Index' and correct==False):
+            logging.info('book:%s do not satify any condition'%(bookname))
             break
         time.sleep(1)
 
