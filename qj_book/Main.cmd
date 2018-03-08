@@ -1,13 +1,13 @@
 {
     "Name": "Main",
-    "InferenceFile":"/home/leo/qj/object_detection/data/Main/inference_frcnn/frozen_inference_graph.pb",
-    "LabelMapFile":"/home/leo/qj/object_detection/data/Main/pascal_label_map.pbtxt",
+    "InferenceFile": "/home/leo/qj/object_detection/data/Main/inference_ssd/frozen_inference_graph.pb",
+    "LabelMapFile": "/home/leo/qj/object_detection/data/Main/pascal_label_map.pbtxt",
     "Sequence": [
         {
             "Name": "Follow Guider",
             "KeyBody": [
                 {
-                    "Name": "LeftArrow",
+                    "Name": "gLeftArrow",
                     "Conditions": [
                         {
                             "Name": "",
@@ -17,7 +17,7 @@
                                     "Percent": 1.0,
                                     "Tags": [
                                         "Guider",
-                                        "LeftArrow"
+                                        "gLeftArrow"
                                     ]
                                 }
                             ],
@@ -28,9 +28,9 @@
                         {
                             "Name": "P(-1/2w,1/2h)",
                             "Command": "Click",
-                            "DecisionPeriod": 1000,
+                            "DecisionPeriod": 99,
                             "StartTag": [
-                                "LeftArrow"
+                                "gLeftArrow"
                             ],
                             "StartOffset": [
                                 -0.5,
@@ -43,7 +43,7 @@
                     ]
                 },
                 {
-                    "Name": "RightArrow",
+                    "Name": "gRightArrow",
                     "Conditions": [
                         {
                             "Name": "",
@@ -53,7 +53,7 @@
                                     "Percent": 1.0,
                                     "Tags": [
                                         "Guider",
-                                        "RightArrow"
+                                        "gRightArrow"
                                     ]
                                 }
                             ],
@@ -64,9 +64,9 @@
                         {
                             "Name": "P(3/2w,1/2h)",
                             "Command": "Click",
-                            "DecisionPeriod": 1000,
+                            "DecisionPeriod": 99,
                             "StartTag": [
-                                "RightArrow"
+                                "gRightArrow"
                             ],
                             "StartOffset": [
                                 1.5,
@@ -79,17 +79,17 @@
                     ]
                 },
                 {
-                    "Name": "UpArrow",
+                    "Name": "gUpArrow",
                     "Conditions": [
                         {
                             "Name": "",
                             "Allow": [
                                 {
-                                    "Name": "UpArrow",
+                                    "Name": "gUpArrow",
                                     "Percent": 1.0,
                                     "Tags": [
                                         "Guider",
-                                        "UpArrow"
+                                        "gUpArrow"
                                     ]
                                 }
                             ],
@@ -100,9 +100,9 @@
                         {
                             "Name": "P(1/2w,-1/2h)",
                             "Command": "Click",
-                            "DecisionPeriod": 1000,
+                            "DecisionPeriod": 99,
                             "StartTag": [
-                                "UpArrow"
+                                "gUpArrow"
                             ],
                             "StartOffset": [
                                 0.5,
@@ -115,17 +115,17 @@
                     ]
                 },
                 {
-                    "Name": "DownArrow",
+                    "Name": "gDownArrow",
                     "Conditions": [
                         {
                             "Name": "",
                             "Allow": [
                                 {
-                                    "Name": "DownArrow",
+                                    "Name": "gDownArrow",
                                     "Percent": 1.0,
                                     "Tags": [
                                         "Guider",
-                                        "DownArrow"
+                                        "gDownArrow"
                                     ]
                                 }
                             ],
@@ -136,9 +136,9 @@
                         {
                             "Name": "P(1/2w,3/2h)",
                             "Command": "Click",
-                            "DecisionPeriod": 1000,
+                            "DecisionPeriod": 99,
                             "StartTag": [
-                                "DownArrow"
+                                "gDownArrow"
                             ],
                             "StartOffset": [
                                 0.5,
@@ -151,17 +151,17 @@
                     ]
                 },
                 {
-                    "Name": "LeftUpArrow",
+                    "Name": "gLeftUpArrow",
                     "Conditions": [
                         {
                             "Name": "",
                             "Allow": [
                                 {
-                                    "Name": "LeftUpArrow",
+                                    "Name": "gLeftUpArrow",
                                     "Percent": 1.0,
                                     "Tags": [
                                         "Guider",
-                                        "LeftUpArrow"
+                                        "gLeftUpArrow"
                                     ]
                                 }
                             ],
@@ -172,11 +172,14 @@
                         {
                             "Name": "P(-1/2w,-1/2h)",
                             "Command": "Click",
-                            "DecisionPeriod": 1000,
+                            "DecisionPeriod": 99,
                             "StartTag": [
-                                "LeftUpArrow"
+                                "gLeftUpArrow"
                             ],
-                            "StartOffset": [-0.5, -0.5],
+                            "StartOffset": [
+                                -0.5,
+                                -0.5
+                            ],
                             "EndTag": [],
                             "EndOffset": [],
                             "Duration": "2~5"
@@ -184,17 +187,17 @@
                     ]
                 },
                 {
-                    "Name": "RightUpArrow",
+                    "Name": "gRightUpArrow",
                     "Conditions": [
                         {
                             "Name": "",
                             "Allow": [
                                 {
-                                    "Name": "RightUpArrow",
+                                    "Name": "gRightUpArrow",
                                     "Percent": 1.0,
                                     "Tags": [
                                         "Guider",
-                                        "RightUpArrow"
+                                        "gRightUpArrow"
                                     ]
                                 }
                             ],
@@ -205,13 +208,13 @@
                         {
                             "Name": "P(1.5, -0.5)",
                             "Command": "Click",
-                            "DecisionPeriod": 1000,
+                            "DecisionPeriod": 99,
                             "StartTag": [
-                                "RightUpArrow"
+                                "gRightUpArrow"
                             ],
                             "StartOffset": [
                                 1.5,
-                               -0.5 
+                                -0.5
                             ],
                             "EndTag": [],
                             "EndOffset": [],
@@ -220,17 +223,17 @@
                     ]
                 },
                 {
-                    "Name": "LeftDownArrow",
+                    "Name": "gLeftDownArrow",
                     "Conditions": [
                         {
                             "Name": "",
                             "Allow": [
                                 {
-                                    "Name": "LeftDownArrow",
+                                    "Name": "gLeftDownArrow",
                                     "Percent": 1.0,
                                     "Tags": [
                                         "Guider",
-                                        "LeftDownArrow"
+                                        "gLeftDownArrow"
                                     ]
                                 }
                             ],
@@ -241,12 +244,12 @@
                         {
                             "Name": "P(-0.5, 1.5)",
                             "Command": "Click",
-                            "DecisionPeriod": 1000,
+                            "DecisionPeriod": 99,
                             "StartTag": [
-                                "LeftDownArrow"
+                                "gLeftDownArrow"
                             ],
                             "StartOffset": [
-                               -0.5,
+                                -0.5,
                                 1.5
                             ],
                             "EndTag": [],
@@ -256,17 +259,17 @@
                     ]
                 },
                 {
-                    "Name": "RightDownArrow",
+                    "Name": "gRightDownArrow",
                     "Conditions": [
                         {
                             "Name": "",
                             "Allow": [
                                 {
-                                    "Name": "RightDownArrow",
+                                    "Name": "gRightDownArrow",
                                     "Percent": 1.0,
                                     "Tags": [
                                         "Guider",
-                                        "RightDownArrow"
+                                        "gRightDownArrow"
                                     ]
                                 }
                             ],
@@ -277,13 +280,53 @@
                         {
                             "Name": "P(1.5, 1.5)",
                             "Command": "Click",
-                            "DecisionPeriod": 1000,
+                            "DecisionPeriod": 99,
                             "StartTag": [
-                                "RightDownArrow"
+                                "gRightDownArrow"
                             ],
                             "StartOffset": [
                                 1.5,
                                 1.5
+                            ],
+                            "EndTag": [],
+                            "EndOffset": [],
+                            "Duration": "2~5"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "Name": "Do Task",
+            "KeyBody": [
+                {
+                    "Name": "ZhuXian Task",
+                    "Conditions": [
+                        {
+                            "Name": "",
+                            "Allow": [
+                                {
+                                    "Name": "",
+                                    "Percent": 1.0,
+                                    "Tags": [
+                                        "tZhuXian"
+                                    ]
+                                }
+                            ],
+                            "Disallow": []
+                        }
+                    ],
+                    "Actions": [
+                        {
+                            "Name": "Click center",
+                            "Command": "Click",
+                            "DecisionPeriod": 99,
+                            "StartTag": [
+                                "tZhuXian"
+                            ],
+                            "StartOffset": [
+                                0.5,
+                                0.5
                             ],
                             "EndTag": [],
                             "EndOffset": [],
