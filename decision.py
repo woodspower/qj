@@ -5,6 +5,7 @@ import random
 import logging
 import time
 import numpy as np
+import struct
 
 import datetime
 import sqlite3
@@ -24,15 +25,40 @@ DECISION_PERIOD_JUMP_MINIMUM = 8
 
 start_time = datetime.datetime.now()
 gLastDecisionTime = datetime.datetime.now()
+gLastDecisionName = ''
 
 
-IMAGE_FILE = os.path.join(os.getenv("HOME"), 'aiswap/qj/snapshot.png')
 
+import subprocess
+# return errcode, image_size, image_np
+# image_np is a numpy array of image data which is defined by img_detection.py
+# Data format should be shape of [H, W, 3], 
+# The first dimension is pixel of each Heigh point,
+# The second dimension is pixel of each Width point,
+# The last dimension is pixel of is each (R,G,B) point.
 def pull_screenshot():
-#    ret = os.system('/opt/genymobile/genymotion/tools/adb shell screencap -p > %s'%(IMAGE_FILE))
-    ret = os.system('/opt/genymobile/genymotion/tools/adb shell screencap -p /sdcard/snapshot.png')
-    ret = os.system('/opt/genymobile/genymotion/tools/adb pull /sdcard/snapshot.png %s'%(IMAGE_FILE))
-    return ret>>8
+    # raw data format from adb:
+    # 4Bytes(width) + 4Bytes(heigh) + 4Bytes(format) + ...N*4Bytes(each byte is a bitmap:RGBA)
+    # fp = os.popen("/opt/genymobile/genymotion/tools/adb exec-out screencap")
+    #ret = os.system('/opt/genymobile/genymotion/tools/adb shell screencap -p /sdcard/snapshot.png')
+    #ret = os.system('/opt/genymobile/genymotion/tools/adb pull /sdcard/snapshot.png %s'%(IMAGE_FILE))
+    proc = subprocess.Popen(["/opt/genymobile/genymotion/tools/adb","exec-out","screencap"], \
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (out,err) = proc.communicate()
+    if err:
+        #print('Error when pull_screenshot:%s'%(err))
+        return err, (), []
+    head = out[:12]
+    # recover data form ctype
+    w,h,ft = struct.unpack_from('3i',head)
+    data = out[12:]
+    if(len(data) != w*h*4):
+        #print('data len of pull_screenshot:%d, is same as Width*Heigh(%d*%d)'%(len(data),w,h))
+        return 'error len:%d, w:%d, h:%d'%(len(data),w,h), (), []
+    img = np.asarray(struct.unpack_from('%dB'%(w*h*4), data), dtype=np.uint8).reshape([h,w,4])
+    # Change last dimension from (R,G,B,A) to (R,G,B)
+    img = np.delete(img, 3, axis=2)
+    return '', (w,h), img
 
 def print_delta_time(tagname):
     global start_time
@@ -131,6 +157,7 @@ def load_cmdbook(bookpath):
     
 def decision_do(detection_time, tags, bookname, pos_dict):
     global gLastDecisionTime
+    global gLastDecisionName
     correct_decision = False
     delta = (detection_time - gLastDecisionTime).total_seconds()*1000
     print("delta is: %f ms"%(delta))
@@ -194,6 +221,7 @@ def decision_do(detection_time, tags, bookname, pos_dict):
 
 def do_action(bunit, kunit, tags, pos_dict):
     global gLastDecisionTime
+    global gLastDecisionName
 
     for action in kunit[u'Actions']:
         current_time = datetime.datetime.now()
@@ -213,6 +241,7 @@ def do_action(bunit, kunit, tags, pos_dict):
             
 def do_action_goto(action, tags, pos_dict):
     global gLastDecisionTime
+    global gLastDecisionName
     # Nested call decision_loop('GotoBook')
     # If the 'GotoBook' find nothing, will come back to UpperBook.
     bookname = action[u'BookName']
@@ -222,6 +251,7 @@ def do_action_goto(action, tags, pos_dict):
 
 def do_action_click(action, tags, pos_dict):
     global gLastDecisionTime
+    global gLastDecisionName
     im_width, im_height = tags['image_size']
     boxes = tags['tag_boxes']
     scores = tags['tag_scores']
@@ -341,12 +371,13 @@ def decision_loop(bookname=u'Index'):
         print('Loop inside book: %s'%(bookname))
         logging.info('Loop inside book: %s'%(bookname))
         print_delta_time("Call pull")
-        if(pull_screenshot() != 0):
-            print 'call screenshot failed, sleep 5s'
+        err, image_size, img_np = pull_screenshot()
+        if err:
+            print 'call screenshot failed, sleep 5s',err
             time.sleep(5)
             continue
         print_delta_time("After Call pull")
-        (image_np, image_size, tag_boxes, tag_scores, tag_classes, tag_num) = book['Detector'].detect(IMAGE_FILE)
+        (image_np, tag_boxes, tag_scores, tag_classes, tag_num) = book['Detector'].detect(img_np)
         tags = {'image_size':image_size, 'tag_boxes':tag_boxes, 'tag_scores':tag_scores, 'tag_classes':tag_classes, 'tag_num':tag_num}
         print_delta_time("After Call detection")
         #store the detected object index position in tags
@@ -354,7 +385,7 @@ def decision_loop(bookname=u'Index'):
         for label_name in book['label2id_map']:
             pos_dict[label_name] = []
         #box should have minimun 60% possibility
-        min_score_thresh = .1
+        min_score_thresh = .4
         for i in range(tag_num):
             if(tag_scores[i]<min_score_thresh): 
                 break 

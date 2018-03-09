@@ -98,22 +98,13 @@ class Detector:
         self.detection_classes = detection_graph.get_tensor_by_name('detection_classes:0')
         self.num_detections = detection_graph.get_tensor_by_name('num_detections:0')
 
-    def load_image_into_numpy_array(self, image):
-      (im_width, im_height) = image.size
-      return np.array(image.getdata()).reshape(
-          (im_height, im_width, 3)).astype(np.uint8)
-
-
     # # Detection
-    def detect(self, image_name):
+    # Input a numpy array of image data, should be shape of [H, W, 3], 
+    # The first dimension is pixel of each Heigh point,
+    # The second dimension is pixel of each Width point,
+    # The last dimension is pixel of is each (R,G,B) point.
+    def detect(self, image_np):
         start_time = time.time()
-        image = Image.open(image_name)
-        #convert PNG to JPG
-        r,g,b,a=image.split()
-        image = Image.merge("RGB", (r,g,b))
-        # the array based representation of the image will be used later in order to prepare the
-        # result image with boxes and labels on it.
-        image_np = self.load_image_into_numpy_array(image)
         # Expand dimensions since the model expects images to have shape: [1, None, None, 3]
         image_np_expanded = np.expand_dims(image_np, axis=0)
         # Actual detection.
@@ -141,5 +132,5 @@ class Detector:
         classes = np.squeeze(classes).astype(np.int32).tolist()
         num = num.astype(np.int32).tolist()[0]
 
-        return (image_np, image.size, boxes, scores, classes, num)
+        return (image_np, boxes, scores, classes, num)
 
