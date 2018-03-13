@@ -252,6 +252,7 @@ def decision_do(detection_time, tags, bookname, pos_dict):
     if bunit2move:
         book['Sequence'].remove(bunit2move)
         book['Sequence'].append(bunit2move)
+
         bunit2move = {}
 
     return correct_decision
