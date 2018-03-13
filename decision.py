@@ -24,8 +24,7 @@ logging.basicConfig(filename='command.log', level=logging.DEBUG)
 DECISION_PERIOD_JUMP_MINIMUM = 8
 
 start_time = datetime.datetime.now()
-gLastDecisionTime = datetime.datetime.now()
-gLastDecisionName = ''
+gLastDecisionActions = []
 
 
 
@@ -156,14 +155,14 @@ def load_cmdbook(bookpath):
             
     
 def decision_do(detection_time, tags, bookname, pos_dict):
-    global gLastDecisionTime
-    global gLastDecisionName
     correct_decision = False
-    delta = (detection_time - gLastDecisionTime).total_seconds()*1000
-    print("delta is: %f ms"%(delta))
-    if(delta <= 0):
-        # Need try again later
-        return True
+#    global gLastDecisionActions
+#    global gLastDecisionTime
+#    delta = (detection_time - gLastDecisionTime).total_seconds()*1000
+#    print("delta is: %f ms"%(delta))
+#    if(delta <= 0):
+#        # Need try again later
+#        return True
 
     image_size = tags['image_size']
     boxes = tags['tag_boxes']
@@ -175,6 +174,8 @@ def decision_do(detection_time, tags, bookname, pos_dict):
 
     # Loop the book
     logging.info('Loop the book')
+    # record the bunit which need to adjust sequence
+    bunit2move = {}
     for bunit in book['Sequence']:
         for kunit in bunit['KeyBody']:
             # Check conditions is ok or not.
@@ -189,10 +190,34 @@ def decision_do(detection_time, tags, bookname, pos_dict):
                     if disallow_result:
                         break
                     for tag in disallow[u'Tags']:
-                        if pos_dict.has_key(tag):
+                        # Need check how long will triger disallow condition
+                        # Set timelast and Seconds key in disallow
+                        if not u'Seconds' in disallow:
+                            # How many seconds will triger
+                            disallow[u'Seconds'] = 0
+                        if not 'timelast' in disallow:
+                            # Last time checked, it is a time.time() float
+                            disallow['timelast'] = 0.0
+                        if not tag in pos_dict:
+                            # clear the timecount
+                            disallow['timelast'] = 0.0
+                            continue
+                        if pos_dict[tag]:
+                            # check how long will triger disallow condition
+                            if disallow[u'Seconds'] != 0:
+                                if disallow['timelast'] == 0.0:
+                                    # start to record time and count
+                                    disallow['timelast'] = time.time()
+                                    continue
+                                timenow = time.time()
+                                delta = timenow - disallow['timelast']
+                                if delta <= disallow[u'Seconds']:
+                                    continue
                             disallow_result = True
                             logging.info('Not satisfied by tag disallow:%s'%(tag))
                             break
+                # Check allow condition before check disallow
+                # otherwise some disallow condition will always happen
                 for allow in cond[u'Allow']:
                     if allow_result:
                         break
@@ -211,47 +236,81 @@ def decision_do(detection_time, tags, bookname, pos_dict):
                         allow_result = True
                         break
             if disallow_result or not allow_result:
+                # adjust priority of the current task, put it to end of list
+                # it is very dangours to change multiple list member at same time
+                # so i just change one at one time
+                if not bunit2move:
+                    bunit2move = bunit
                 continue
             # kunit condition is ok, do the action.
             logging.info('Condition is ready...')
             correct_decision=True
-            do_action(bunit, kunit, tags, pos_dict)
+            do_action(bookname, bunit, kunit, tags, pos_dict)
+            # Only one of the first condition in KeyBody list will be executed
+            break
+    # adjust priority of the current task, put it to end of list
+    if bunit2move:
+        book['Sequence'].remove(bunit2move)
+        book['Sequence'].append(bunit2move)
+        bunit2move = {}
+
     return correct_decision
             
 
-def do_action(bunit, kunit, tags, pos_dict):
-    global gLastDecisionTime
-    global gLastDecisionName
+def do_action(bookname, bunit, kunit, tags, pos_dict):
+    global gLastDecisionActions
 
-    for action in kunit[u'Actions']:
+    actions = kunit[u'Actions']
+    num = len(actions)
+    for idx in range(num):
+        action = actions[idx]
         current_time = datetime.datetime.now()
         logging.info('entering action: %s'%(str(action)))
-        delta = (current_time - gLastDecisionTime).total_seconds()*1000
-        decision_period = float(action[u'DecisionPeriod'])
-        if(delta < decision_period):
-            logging.info('delay this action since delta:%f < decision period:%f'%(delta, decision_period))
-            continue
+        if len(gLastDecisionActions) > idx:
+            if gLastDecisionActions[idx]['Action'] == action:
+                delta = (current_time - gLastDecisionActions[idx]['Time']).total_seconds()*1000
+                decision_period = float(action[u'DecisionPeriod'])
+                if(delta < decision_period):
+                    logging.info('delay this action since delta:%f < decision period:%f'%(delta, decision_period))
+                    continue
         if action[u'Command'] == u'Click':
-            do_action_click(action, tags, pos_dict)
+            do_action_click(bookname, actions, idx, tags, pos_dict)
         elif action[u'Command'] == u'Goto':
-            do_action_goto(action, tags, pos_dict)
+            do_action_goto(bookname, actions, idx, tags, pos_dict)
         else:
             logging.info('this action is tbd....')
             continue
             
-def do_action_goto(action, tags, pos_dict):
-    global gLastDecisionTime
-    global gLastDecisionName
+def do_action_goto(current_book, actions, idx, tags, pos_dict):
+    global gLastDecisionActions
     # Nested call decision_loop('GotoBook')
     # If the 'GotoBook' find nothing, will come back to UpperBook.
-    bookname = action[u'BookName']
-    decision_loop(bookname)
-    logging.info('End Loop inside book: %s'%(bookname))
+    action = actions[idx]
+    target_book = action[u'BookName']
+    logging.info('From book:%s goto book:%s'%(current_book, target_book))
+    if(len(gLastDecisionActions) <= idx):
+        gLastDecisionActions.append({ 'CurrentBook':current_book, \
+                                'Time' : datetime.datetime.now(), \
+                                'Action': action, \
+                                'Command':action['Command'],\
+                                'Params': { 'target_book':target_book }
+                                })
+    else:
+        gLastDecisionActions[idx] = { 'CurrentBook':current_book, \
+                                'Time' : datetime.datetime.now(), \
+                                'Action': action, \
+                                'Command':action['Command'],\
+                                'Params': { 'target_book':target_book }
+                                }
+    print('DO: %s'%(str(gLastDecisionActions[idx])))
+    logging.info('DO: %s'%(str(gLastDecisionActions[idx])))
+    decision_loop(target_book)
+    logging.info('End Loop inside book: %s'%(target_book))
 
 
-def do_action_click(action, tags, pos_dict):
-    global gLastDecisionTime
-    global gLastDecisionName
+def do_action_click(current_book, actions, idx, tags, pos_dict):
+    global gLastDecisionActions
+    action = actions[idx]
     im_width, im_height = tags['image_size']
     boxes = tags['tag_boxes']
     scores = tags['tag_scores']
@@ -288,12 +347,23 @@ def do_action_click(action, tags, pos_dict):
     #all the unit start with 'r' means relative distance
     rxoffset, ryoffset = 0.5, 0.5
     rymin,rxmin,rymax,rxmax = boxes[pos_dict[start_key][0]]
-    yrand = random.random()*(rymax-rymin)*0.01
-    xrand = random.random()*(rxmax-rxmin)*0.01
+    yrand = random.random()*(rymax-rymin)*0.02
+    xrand = random.random()*(rxmax-rxmin)*0.02
     if action[u'StartOffset']:
         (rxoffset, ryoffset) = action[u'StartOffset']
-    xstart = int((rxmin + rxoffset*(rxmax-rxmin) + xrand)*im_width)
-    ystart = int((rymin + ryoffset*(rymax-rymin) + yrand)*im_height)
+    rxstart = rxmin + rxoffset*(rxmax-rxmin)
+    rystart = rymin + ryoffset*(rymax-rymin)
+    multi = 1
+    xstart = int((rxstart + multi*xrand)*im_width)
+    ystart = int((rystart + multi*yrand)*im_height)
+    if xstart < 0: 
+        xstart = 5
+    if xstart > im_width: 
+        xstart = im_width-1
+    if ystart < 0: 
+        ystart = 5
+    if ystart > im_height: 
+        ystart = im_height-1
     logging.debug('[start point] key:%s, rxmin:%f, rymin:%f, rxmax:%f, rymax:%f, \
                     rxoffset:%f, ryoffset:%f, xstart:%d, ystart:%d'%\
                     (start_key, rxmin, rymin, rxmax, rymax, \
@@ -319,8 +389,19 @@ def do_action_click(action, tags, pos_dict):
         xrand = random.random()*(rxmax-rxmin)*0.01
         if action[u'EndOffset']:
             (rxoffset, ryoffset) = action[u'EndOffset']
-        xend = int((rxmin + rxoffset*(rxmax-rxmin) + xrand)*im_width)
-        yend = int((rymin + ryoffset*(rymax-rymin) + yrand)*im_height)
+        rxend = rxmin + rxoffset*(rxmax-rxmin)
+        ryend = rymin + ryoffset*(rymax-rymin)
+        multi = 1
+        xend = int((rxend + multi*xrand)*im_width)
+        yend = int((ryend + multi*yrand)*im_height)
+        if xend < 0: 
+            xend = 1
+        if xend > im_width: 
+            xend = im_width-1
+        if yend < 0: 
+            yend = 1
+        if yend > im_height: 
+            yend = im_height-1
         logging.debug('[end point] key:%s, rxmin:%f, rymin:%f, rxmax:%f, rymax:%f, \
                         rxoffset:%f, ryoffset:%f, xend:%d, yend:%d'%\
                         (end_key, rxmin, rymin, rxmax, rymax, \
@@ -332,15 +413,29 @@ def do_action_click(action, tags, pos_dict):
         duration_range = [10, 50]
     duration = random.randint(duration_range[0], duration_range[1])
     # do it
-    logging.info('click start from box:%s, xstart:%d, ystart:%d,\
-                   end to box:%s, xend:%d, yend:%d,\
-                   duration:%d'%\
-                   (start_key, xstart, ystart,\
-                    end_key, xend, yend, duration))
-    cmd = '/opt/genymobile/genymotion/tools/adb shell input swipe %d %d %d %d '%(xstart,ystart,xend,yend) + str(duration)
-    print(cmd)
+    cmd = '/opt/genymobile/genymotion/tools/adb shell input swipe %d %d %d %d '%\
+            (xstart,ystart,xend,yend) + str(duration)
     os.system(cmd)
-    gLastDecisionTime = datetime.datetime.now()
+    print cmd
+    if(len(gLastDecisionActions) <= idx):
+        gLastDecisionActions.append({ 'CurrentBook':current_book, \
+                                'Time' : datetime.datetime.now(), \
+                                'Action': action, \
+                                'Command':action['Command'],\
+                                'Params': { 'start_key':start_key,'xstart':xstart,'ystart':ystart,\
+                                            'end_key':end_key,'xend':xend,'yend':yend,'duration':duration}
+                                })
+    else:
+        gLastDecisionActions[idx] = { 'CurrentBook':current_book, \
+                                'Time' : datetime.datetime.now(), \
+                                'Action': action, \
+                                'Command':action['Command'],\
+                                'Params': { 'start_key':start_key,'xstart':xstart,'ystart':ystart,\
+                                            'end_key':end_key,'xend':xend,'yend':yend,'duration':duration}
+                                }
+    print('DO: %s'%(str(gLastDecisionActions[idx])))
+    logging.info('DO: %s'%(str(gLastDecisionActions[idx])))
+
     
 # range format should be a string like '2~5' or '3'
 def parse_range(fromto):
