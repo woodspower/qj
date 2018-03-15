@@ -26,6 +26,7 @@ DECISION_PERIOD_JUMP_MINIMUM = 8
 start_time = datetime.datetime.now()
 gLastDecisionActions = []
 
+gDevice = "192.168.56.101"
 
 
 import subprocess
@@ -41,7 +42,7 @@ def pull_screenshot():
     # fp = os.popen("/opt/genymobile/genymotion/tools/adb exec-out screencap")
     #ret = os.system('/opt/genymobile/genymotion/tools/adb shell screencap -p /sdcard/snapshot.png')
     #ret = os.system('/opt/genymobile/genymotion/tools/adb pull /sdcard/snapshot.png %s'%(IMAGE_FILE))
-    proc = subprocess.Popen(["/opt/genymobile/genymotion/tools/adb","exec-out","screencap"], \
+    proc = subprocess.Popen(["/opt/genymobile/genymotion/tools/adb","-s",gDevice,"exec-out","screencap"], \
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (out,err) = proc.communicate()
     if err:
@@ -424,8 +425,8 @@ def do_action_click(current_book, actions, idx, tags, pos_dict):
         duration_range = [10, 50]
     duration = random.randint(duration_range[0], duration_range[1])
     # do it
-    cmd = '/opt/genymobile/genymotion/tools/adb shell input swipe %d %d %d %d '%\
-            (xstart,ystart,xend,yend) + str(duration)
+    cmd = '/opt/genymobile/genymotion/tools/adb -s %s shell input swipe %d %d %d %d '%\
+            (gDevice, xstart,ystart,xend,yend) + str(duration)
     os.system(cmd)
     print cmd
     if(len(gLastDecisionActions) <= idx):
