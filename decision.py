@@ -175,8 +175,8 @@ def decision_do(detection_time, tags, bookname, pos_dict):
     # Loop the book
     logging.info('Loop the book')
     # record the bunit which need to adjust sequence
-    bunit2move = {}
     for bunit in book['Sequence']:
+        kunit2move = {}
         for kunit in bunit['KeyBody']:
             # Check conditions is ok or not.
             logging.info('Check condition [%s][%s][%s]'\
@@ -202,26 +202,33 @@ def decision_do(detection_time, tags, bookname, pos_dict):
                             # clear the timecount
                             disallow['timelast'] = 0.0
                             continue
-                        if pos_dict[tag]:
-                            # check how long will triger disallow condition
-                            if disallow[u'Seconds'] != 0:
-                                if disallow['timelast'] == 0.0:
-                                    # start to record time and count
-                                    disallow['timelast'] = time.time()
-                                    continue
-                                timenow = time.time()
-                                delta = timenow - disallow['timelast']
-                                if delta <= disallow[u'Seconds']:
-                                    continue
-                            disallow_result = True
-                            logging.info('Not satisfied by tag disallow:%s'%(tag))
-                            break
+                        if not pos_dict[tag]:
+                            # clear the timecount
+                            disallow['timelast'] = 0.0
+                            continue
+                        # found disallowed tag
+                        # check how long will triger disallow condition
+                        if disallow[u'Seconds'] != 0:
+                            if disallow['timelast'] == 0.0:
+                                # start to record time and count
+                                disallow['timelast'] = time.time()
+                                continue
+                            timenow = time.time()
+                            delta = timenow - disallow['timelast']
+                            if delta <= disallow[u'Seconds']:
+                                continue
+                        disallow_result = True
+                        logging.info('Not satisfied by tag disallow:%s'%(tag))
+                        break
                 # Check allow condition before check disallow
                 # otherwise some disallow condition will always happen
                 for allow in cond[u'Allow']:
                     if allow_result:
                         break
                     allow_num_req = int(len(allow[u'Tags'])*allow[u'Percent'])
+                    if allow_num_req == 0:
+                        # At least one tag should be found
+                        allow_num_req = 1
                     allow_num = 0
                     taglist = []
                     for tag in allow[u'Tags']:
@@ -236,11 +243,11 @@ def decision_do(detection_time, tags, bookname, pos_dict):
                         allow_result = True
                         break
             if disallow_result or not allow_result:
-                # adjust priority of the current task, put it to end of list
+                # adjust priority of the current condition unit, put it to end of list
                 # it is very dangours to change multiple list member at same time
                 # so i just change one at one time
-                if not bunit2move:
-                    bunit2move = bunit
+                if not kunit2move:
+                    kunit2move = kunit
                 continue
             # kunit condition is ok, do the action.
             logging.info('Condition is ready...')
@@ -248,12 +255,15 @@ def decision_do(detection_time, tags, bookname, pos_dict):
             do_action(bookname, bunit, kunit, tags, pos_dict)
             # Only one of the first condition in KeyBody list will be executed
             break
-    # adjust priority of the current task, put it to end of list
-    if bunit2move:
-        book['Sequence'].remove(bunit2move)
-        book['Sequence'].append(bunit2move)
-
-        bunit2move = {}
+        # adjust priority of the current task, put it to end of Keybody list
+        # this adjust is import to avoid dead loop switch in two tasks
+        # DO NOT adjust if no condition is correct last time
+        if correct_decision and kunit2move:
+            logging.info('Adjust kunit to end. Book:%s, bunit:%s, kunit:%s'\
+                        %(bookname,bunit['Name'],kunit2move))
+            bunit['KeyBody'].remove(kunit2move)
+            bunit['KeyBody'].append(kunit2move)
+            kunit2move = {}
 
     return correct_decision
             

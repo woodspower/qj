@@ -4,10 +4,10 @@
     "LabelMapFile":"/home/leo/qj/object_detection/data/Index/pascal_label_map.pbtxt",
     "Sequence": [
         {
-            "Name": "If StartGame GUI",
+            "Name": "Go to one of following GUI",
             "KeyBody": [
                 {
-                    "Name": "",
+                    "Name": "If StartGame GUI",
                     "Conditions": [
                         {
                             "Name": "",
@@ -29,14 +29,9 @@
                             "BookName": "StartGame"
                         }
                     ]
-                }
-            ]
-        },
-        {
-            "Name": "If Movie GUI",
-            "KeyBody": [
+                },
                 {
-                    "Name": "",
+                    "Name": "If Movie GUI",
                     "Conditions": [
                         {
                             "Name": "",
@@ -68,14 +63,9 @@
                             "BookName": "Movie"
                         }
                     ]
-                }
-            ]
-        },
-        {
-            "Name": "If Main GUI",
-            "KeyBody": [
+                },
                 {
-                    "Name": "",
+                    "Name": "If Main GUI",
                     "Conditions": [
                         {
                             "Name": "",
@@ -97,14 +87,9 @@
                             "BookName": "Main"
                         }
                     ]
-                }
-            ]
-        },
-        {
-            "Name": "If any other fight GUI",
-            "KeyBody": [
+                },
                 {
-                    "Name": "Use Main temporary",
+                    "Name": "If any other fight GUI",
                     "Conditions": [
                         {
                             "Name": "",
@@ -120,7 +105,7 @@
                     ],
                     "Actions": [
                         {
-                            "Name": "Then Goto...",
+                            "Name": "Use Main temporary",
                             "Command": "Goto",
                             "DecisionPeriod": 0,
                             "BookName": "Main"

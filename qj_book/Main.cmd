@@ -314,8 +314,8 @@
                                     ]
                                 },
                                 {
-                                    "Name": "cancel when fightoff for 15secs",
-                                    "Seconds": 15,
+                                    "Name": "cancel when fightoff for 60secs",
+                                    "Seconds": 60,
                                     "Tags": [
                                         "FightOff"
                                     ]
