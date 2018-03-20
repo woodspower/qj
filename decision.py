@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import sys, getopt
 import re
 import random
 import logging
@@ -18,7 +19,6 @@ from object_detection.utils import label_map_util
 
 from img_detection import Detector
 
-logging.basicConfig(filename='command.log', level=logging.DEBUG)
 
 # minimum 3 seconds between each decision 
 DECISION_PERIOD_JUMP_MINIMUM = 8
@@ -26,7 +26,8 @@ DECISION_PERIOD_JUMP_MINIMUM = 8
 start_time = datetime.datetime.now()
 gLastDecisionActions = []
 
-gDevice = "192.168.56.101"
+#gDevice = "192.168.56.101"
+gDevice = ""
 
 
 import subprocess
@@ -67,7 +68,148 @@ def print_delta_time(tagname):
     start_time = current_time
     print(tagname, " : ", delta_time.seconds)
 
-gBooks = {}
+gBooks = {
+"Template":{
+    "BookName": "",
+    "InferenceFile": "",
+    "LabelMapFile": "",
+    "Sequence": [
+        {
+            "Name": "",
+            "KeyBody": [
+                {
+                    "Name": "",
+                    "Conditions": [
+                        {
+                            "Name": "",
+                            "Allow": [
+                                {
+                                    "Name": "",
+                                    "Percent": 1.0,
+                                    "Jobs": {},
+                                    "Tags": []
+                                }
+                            ],
+                            "Disallow": [
+                                {
+                                    "Name": "",
+                                    "Seconds": 0,
+                                    "Tags": []
+                                }
+                            ]
+                        }
+                    ],
+                    "Actions_Click": [
+                        {
+                            "Name": "",
+                            "Command": "Click",
+                            "DecisionPeriod": 0,
+                            "PresetPeriod": 0,
+                            "StartTag": [],
+                            "StartOffset": [],
+                            "EndTag": [],
+                            "EndOffset": [],
+                            "Duration": ""
+                        }
+                    ],
+                    "Actions_Reload": [
+                        {
+                            "Name": "",
+                            "Command": "Reload",
+                            "DecisionPeriod": 0,
+                            "PresetPeriod": 2000
+                        }
+                    ],
+                    "Actions_Goto": [
+                        {
+                            "Name": "",
+                            "Command": "Goto",
+                            "DecisionPeriod": 0,
+                            "PresetPeriod": 0,
+                            "BookName": "MUST"
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+  }
+}
+# Check valid of the diction , initial default value and restore to book
+def check_and_init_book(d, book):
+    global gBooks
+    # load main book unit
+    # each book include a sequence of decision book unit
+    book['Sequence'] = d['Sequence']
+    # Check valid of the book
+    # Unify the following field to list
+    if not isinstance(d['Sequence'], list):
+        d['Sequence'] = [d['Sequence']]
+    for bunit in d['Sequence']:
+        # Unify the following field to list
+        if not isinstance(bunit['KeyBody'], list):
+            bunit['KeyBody'] = [bunit['KeyBody']]
+        for kunit in bunit[u'KeyBody']:
+            check_dict = {u'Allow':[u'Percent',u'Tags'],\
+                          u'Disallow':[u'Tags']}
+            # Unify the following field to list
+            if not isinstance(kunit['Conditions'], list):
+                kunit['Conditions'] = [kunit['Conditions']]
+            for cunit in kunit[u'Conditions']:
+                for uk in check_dict.keys():
+                    # Unify the following field to list
+                    if not isinstance(cunit[uk], list):
+                        cunit[uk] = [cunit[uk]]
+                    for unit in cunit[uk]:
+                        for val in check_dict[uk]:
+                            assert unit.has_key(val), \
+                                "%s not in file:%s-[%s], \
+                                [u'KeyBody']-[%s], \
+                                [u'Conditions']-[%s], \
+                                [%s]-[%s]"\
+                                %(val,fname,\
+                                bunit[u'Name'],\
+                                kunit[u'Name'],\
+                                cunit[u'Name'],\
+                                uk,unit[u'Name'])
+            check_dict = {u'Click':[u'DecisionPeriod',u'StartTag',\
+                                    u'StartOffset',u'EndTag',\
+                                    u'EndOffset',u'Duration'],\
+                          u'Goto':[u'DecisionPeriod',u'BookName']}
+            # Unify the following field to list
+            if not isinstance(kunit['Actions'], list):
+                kunit['Actions'] = [kunit['Actions']]
+            for cunit in kunit[u'Actions']:
+                key = cunit[u'Command']
+                for val in check_dict[key]:
+                    assert cunit.has_key(val), \
+                        "%s not in file:%s-[%s], \
+                        [u'KeyBody']-[%s], \
+                        [u'Actions']-[%s])"\
+                        %(val,fname,\
+                        bunit[u'Name'],\
+                        kunit[u'Name'],\
+                        cunit[u'Name'])
+#            if kunit.has_key(u'GoBack'):
+#                for cunit in kunit[u'GoBack']:
+#                    # Doing the type check
+#                    for check in [(u'DecisionPeriod', float),\
+#                                  (u'StartTag',list),\
+#                                  (u'StartOffset',list),\
+#                                  (u'EndTag',list),\
+#                                  (u'EndOffset',list),\
+#                                  (u'Duration',str)]:
+#                        try:
+#                            check[1](check[0])
+#                        except: 
+#                            print "%s wrong in file:%s-[%s], \
+#                            [u'KeyBody']-[%s], \
+#                            [u'GoBack']-[%s])"\
+#                            %(val,fname,\
+#                            bunit[u'Name'],\
+#                            kunit[u'Name'],\
+#                            cunit[u'Name'])
+
 def load_cmdbook(bookpath):
     global gBooks
     # Read input file
@@ -80,79 +222,33 @@ def load_cmdbook(bookpath):
         fin = open(os.path.join(bookpath,fname), 'r')
         d = json.load(fin, object_pairs_hook=OrderedDict)
         fin.close()
-        bookname = d['Name']
-        assert not gBooks.has_key(bookname), \
-            "book %s is duplicate in file:%s"%(bookname,fname)
+        infname = d['InferenceName']
+        bookname = os.path.basename(fname).split('.')[0].strip()
+        assert bookname not in gBooks, \
+            "book %s in file:%s is duplicated"%(bookname,fname)
+
         book = {}
+        if infname in gBooks:
+            print("book %s in file:%s using existing inference:%s"%(bookname,fname,infname))
+            book['label2id_map'] = gBooks['infname']['label2id_map']
+            book['id2label_map'] = gBooks['infname']['id2label_map']
+            book['Detector'] = gBooks['infname']['Detector']
+
+        else:
+            # load label map
+            label2id_map = label_map_util.get_label_map_dict(d['LabelMapFile'])
+            id2label_map = {}
+            for key in label2id_map.keys():
+                val = label2id_map[key]
+                id2label_map[val] = key
+            book['label2id_map'] = label2id_map
+            book['id2label_map'] = id2label_map
+            # load a detector
+            book['Detector'] = Detector(book, d['InferenceFile'], d['LabelMapFile'])
+
+        check_and_init_book(d, book)
         gBooks[bookname] = book
 
-        # load label map
-        label2id_map = label_map_util.get_label_map_dict(d['LabelMapFile'])
-        id2label_map = {}
-        for key in label2id_map.keys():
-            val = label2id_map[key]
-            id2label_map[val] = key
-        book['label2id_map'] = label2id_map
-        book['id2label_map'] = id2label_map
-
-        # load main book unit
-        # each book include a sequence of decision book unit
-        book['Sequence'] = d['Sequence']
-        # Check valid of the book
-        for bunit in d['Sequence']:
-            for kunit in bunit[u'KeyBody']:
-                check_dict = {u'Allow':[u'Percent',u'Tags'],\
-                              u'Disallow':[u'Tags']}
-                for cunit in kunit[u'Conditions']:
-                    for uk in check_dict.keys():
-                        for unit in cunit[uk]:
-                            for val in check_dict[uk]:
-                                assert unit.has_key(val), \
-                                    "%s not in file:%s-[%s], \
-                                    [u'KeyBody']-[%s], \
-                                    [u'Conditions']-[%s], \
-                                    [%s]-[%s]"\
-                                    %(val,fname,\
-                                    bunit[u'Name'],\
-                                    kunit[u'Name'],\
-                                    cunit[u'Name'],\
-                                    uk,unit[u'Name'])
-                check_dict = {u'Click':[u'DecisionPeriod',u'StartTag',\
-                                        u'StartOffset',u'EndTag',\
-                                        u'EndOffset',u'Duration'],\
-                              u'Goto':[u'DecisionPeriod',u'BookName']}
-                for cunit in kunit[u'Actions']:
-                    key = cunit[u'Command']
-                    for val in check_dict[key]:
-                        assert cunit.has_key(val), \
-                            "%s not in file:%s-[%s], \
-                            [u'KeyBody']-[%s], \
-                            [u'Actions']-[%s])"\
-                            %(val,fname,\
-                            bunit[u'Name'],\
-                            kunit[u'Name'],\
-                            cunit[u'Name'])
-                if kunit.has_key(u'GoBack'):
-                    for cunit in kunit[u'GoBack']:
-                        # Doing the type check
-                        for check in [(u'DecisionPeriod', float),\
-                                      (u'StartTag',list),\
-                                      (u'StartOffset',list),\
-                                      (u'EndTag',list),\
-                                      (u'EndOffset',list),\
-                                      (u'Duration',str)]:
-                            try:
-                                check[1](check[0])
-                            except: 
-                                print "%s wrong in file:%s-[%s], \
-                                [u'KeyBody']-[%s], \
-                                [u'GoBack']-[%s])"\
-                                %(val,fname,\
-                                bunit[u'Name'],\
-                                kunit[u'Name'],\
-                                cunit[u'Name'])
-        # load a detector
-        book['Detector'] = Detector(book, d['InferenceFile'], d['LabelMapFile'])
             
     
 def decision_do(detection_time, tags, bookname, pos_dict):
@@ -526,10 +622,35 @@ def decision_loop(bookname=u'Index'):
         time.sleep(1)
 
 
+def main(argv):
+    global gDevice
 
-load_cmdbook('./qj_book')
-decision_loop()
+    try:
+        opts, args = getopt.getopt(argv, "hd:",["device="])
+    except getopt.GetoptError:
+        print getopt.GetoptError
+        print 'decision.py -d <device_ip>'
+        sys.exit(2)
+
+    for opt, arg in opts:
+        if opt == "-h":
+            print 'decision.py -d <device_ip>'
+            sys.exit()
+        elif opt in ("-d", "--device"):
+            gDevice = arg
+            break
+                
+    if not gDevice:
+        print 'please input a device ip'
+        cmd = '/opt/genymobile/genymotion/tools/adb devices'
+        os.system(cmd)
+        sys.exit()
+
+    logging.basicConfig(filename='command-%s.log'%(gDevice), level=logging.DEBUG)
+    load_cmdbook('./qj_book')
+    decision_loop()
 
 
-
+if __name__ == "__main__":
+    main(sys.argv[1:])
 
