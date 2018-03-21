@@ -89,6 +89,16 @@
                     ]
                 },
                 {
+                    "Name": "If Copier GUI",
+                    "Conditions": {
+                            "Allow": { "Tags": "CopierMenu"}
+                        },
+                    "Actions": {
+                            "Command": "Goto",
+                            "BookName": "CopierMenu"
+                        }
+                },
+                {
                     "Name": "If any other fight GUI",
                     "Conditions": [
                         {

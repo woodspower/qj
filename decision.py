@@ -68,146 +68,179 @@ def print_delta_time(tagname):
     start_time = current_time
     print(tagname, " : ", delta_time.seconds)
 
-gBooks = {
-"Template":{
-    "BookName": "",
-    "InferenceFile": "",
-    "LabelMapFile": "",
-    "Sequence": [
-        {
-            "Name": "",
-            "KeyBody": [
-                {
-                    "Name": "",
-                    "Conditions": [
-                        {
-                            "Name": "",
-                            "Allow": [
-                                {
-                                    "Name": "",
-                                    "Percent": 1.0,
-                                    "Jobs": {},
-                                    "Tags": []
-                                }
-                            ],
-                            "Disallow": [
-                                {
-                                    "Name": "",
-                                    "Seconds": 0,
-                                    "Tags": []
-                                }
-                            ]
-                        }
-                    ],
-                    "Actions_Click": [
-                        {
-                            "Name": "",
-                            "Command": "Click",
-                            "DecisionPeriod": 0,
-                            "PresetPeriod": 0,
-                            "StartTag": [],
-                            "StartOffset": [],
-                            "EndTag": [],
-                            "EndOffset": [],
-                            "Duration": ""
-                        }
-                    ],
-                    "Actions_Reload": [
-                        {
-                            "Name": "",
-                            "Command": "Reload",
-                            "DecisionPeriod": 0,
-                            "PresetPeriod": 2000
-                        }
-                    ],
-                    "Actions_Goto": [
-                        {
-                            "Name": "",
-                            "Command": "Goto",
-                            "DecisionPeriod": 0,
-                            "PresetPeriod": 0,
-                            "BookName": "MUST"
-                        }
-                    ]
-                }
-            ]
-        }
-    ]
-  }
-}
+gBooks = {}
 
-# Check valid of the diction , initial default value and restore to book
-def check_and_init_book_keybody(kunit):
+# Check valid of the diction , initial default value
+# Format is as tmpl.
+def init_book_keybody_condition_job(job):
+    # Init default value from template
+    tmpl = {
+        "Name": "",
+        "Status": ">0",
+        "Bookname": None
+    }
+    for key in tmpl:
+        # Set default value for job
+        if not key in job:
+            job[key] = tmpl[key]
+        # Some field should not use default
+        assert job[key] != None, \
+            "key:%s MUST set a value in job body:%s"%(key,job)
+
+# Check valid of the diction , initial default value
+# Format is as tmpl.
+def init_book_keybody_condition_disallow(disallow):
+    # Init default value from template
+    tmpl = {
+        "Name": "",
+        "Seconds": 0,
+        "Tags": None
+    }
+    for key in tmpl:
+        # Set default value for disallow
+        if not key in disallow:
+            disallow[key] = tmpl[key]
+        # Some field should not use default
+        assert disallow[key] != None, \
+            "key:%s MUST set a value in disallow body:%s"%(key,disallow)
+    # Unify the following field to list
+    if not isinstance(disallow['Tags'], list):
+        disallow['Tags'] = [disallow['Tags']]
+
+# Check valid of the diction , initial default value
+# Format is as tmpl.
+def init_book_keybody_condition_allow(allow):
+    # Init default value from template
+    tmpl = {
+        "Name": "",
+        "Percent": 1.0,
+        "Tags": None
+    }
+    for key in tmpl:
+        # Set default value for allow
+        if not key in allow:
+            allow[key] = tmpl[key]
+        # Some field should not use default
+        assert allow[key] != None, \
+            "key:%s MUST set a value in allow body:%s"%(key,allow)
+    # Unify the following field to list
+    if not isinstance(allow['Tags'], list):
+        allow['Tags'] = [allow['Tags']]
+
+# Check valid of the diction , initial default value
+# Format is as:
+#    {
+#        "Name": "",
+#        "Allow": [...]
+#        "Jobs": [...]
+#        "Disallow": [...]
+#    }
+def init_book_keybody_condition(cunit):
+    # Init default value
+    if not 'Name' in cunit:
+        cunit['Name'] = ''
+    if not 'Allow' in cunit:
+        cunit['Allow'] = []
+    if not 'Jobs' in cunit:
+        cunit['Jobs'] = []
+    if not 'Disallow' in cunit:
+        cunit['Disallow'] = []
+
+    # Unify the following field to list
+    if not isinstance(cunit['Allow'], list):
+        cunit['Allow'] = [cunit['Allow']]
+    if not isinstance(cunit['Jobs'], list):
+        cunit['Jobs'] = [cunit['Jobs']]
+    if not isinstance(cunit['Disallow'], list):
+        cunit['Disallow'] = [cunit['Disallow']]
+
+    for allow in cunit['Allow']:
+        init_book_keybody_condition_allow(allow)
+
+    for disallow in cunit['Disallow']:
+        init_book_keybody_condition_disallow(disallow)
+
+    for job in cunit['Jobs']:
+        init_book_keybody_condition_job(job)
+
+
+# Check valid of the diction , initial default value
+# Format is as acTemplate.
+def init_book_keybody_action(cunit):
+    # Init default value
+    acTemplate = {
+        "Action_Click": {
+                "Name": "",
+                "Command": "Click",
+                "DecisionPeriod": 0,
+                "PresetPeriod": 0,
+                "StartTag": None,
+                "StartOffset": [],
+                "EndTag": [],
+                "EndOffset": [],
+                "Duration": "20~50"
+        },
+        "Action_Reload": {
+                "Name": "",
+                "Command": "Reload",
+                "DecisionPeriod": 0,
+                "PresetPeriod": 2000
+        },
+        "Action_Goto": {
+                "Name": "",
+                "Command": "Goto",
+                "DecisionPeriod": 0,
+                "PresetPeriod": 0,
+                "BookName": None
+        }
+    }
+    cmd = cunit[u'Command']
+    tmpl = acTemplate["Action_"+cmd]
+    for key in tmpl:
+        # Set default value for cunit
+        if not key in cunit:
+            cunit[key] = tmpl[key]
+        # Some field should not use default
+        assert cunit[key] != None, \
+            "key:%s MUST set a value in Action body:%s"%(key,cunit)
+
+
+# Check valid of the diction , initial default value
+# Format is as:
+#    {
+#        "Name": "",
+#        "Conditions": [...],
+#        "Actions": [...],
+#    }
+def init_book_keybody(kunit):
     # Init default value
     if not 'Name' in kunit:
         kunit['Name'] = ''
-    check_dict = {u'Allow':[u'Percent',u'Tags'],\
-                  u'Disallow':[u'Tags']}
     # Unify the following field to list
     if not isinstance(kunit['Conditions'], list):
         kunit['Conditions'] = [kunit['Conditions']]
     for cunit in kunit[u'Conditions']:
-        # Init default value
-        if not 'Name' in cunit:
-            cunit['Name'] = ''
-        if not 'Disallow' in cunit:
-            cunit['Disallow'] = []
-        for uk in check_dict.keys():
-            # Unify the following field to list
-            if not isinstance(cunit[uk], list):
-                cunit[uk] = [cunit[uk]]
-            for unit in cunit[uk]:
-                for val in check_dict[uk]:
-                    assert unit.has_key(val), \
-                        "%s not in file:%s-[%s], \
-                        [u'KeyBody']-[%s], \
-                        [u'Conditions']-[%s], \
-                        [%s]-[%s]"\
-                        %(val,fname,\
-                        bunit[u'Name'],\
-                        kunit[u'Name'],\
-                        cunit[u'Name'],\
-                        uk,unit[u'Name'])
-    check_dict = {u'Click':[u'DecisionPeriod',u'StartTag',\
-                            u'StartOffset',u'EndTag',\
-                            u'EndOffset',u'Duration'],\
-                  u'Goto':[u'DecisionPeriod',u'BookName']}
+        init_book_keybody_condition(cunit)
     # Unify the following field to list
     if not isinstance(kunit['Actions'], list):
         kunit['Actions'] = [kunit['Actions']]
     for cunit in kunit[u'Actions']:
-        key = cunit[u'Command']
-        for val in check_dict[key]:
-            assert cunit.has_key(val), \
-                "%s not in file:%s-[%s], \
-                [u'KeyBody']-[%s], \
-                [u'Actions']-[%s])"\
-                %(val,fname,\
-                bunit[u'Name'],\
-                kunit[u'Name'],\
-                cunit[u'Name'])
-#            if kunit.has_key(u'GoBack'):
-#                for cunit in kunit[u'GoBack']:
-#                    # Doing the type check
-#                    for check in [(u'DecisionPeriod', float),\
-#                                  (u'StartTag',list),\
-#                                  (u'StartOffset',list),\
-#                                  (u'EndTag',list),\
-#                                  (u'EndOffset',list),\
-#                                  (u'Duration',str)]:
-#                        try:
-#                            check[1](check[0])
-#                        except: 
-#                            print "%s wrong in file:%s-[%s], \
-#                            [u'KeyBody']-[%s], \
-#                            [u'GoBack']-[%s])"\
-#                            %(val,fname,\
-#                            bunit[u'Name'],\
-#                            kunit[u'Name'],\
-#                            cunit[u'Name'])
+        init_book_keybody_action(cunit)
 
 # Check valid of the source book diction , initial default value
-def check_and_init_book(d):
+# Format is as:
+# {
+#     "BookName": "",
+#     "InferenceFile": "",
+#     "LabelMapFile": "",
+#     "Sequence": [
+#         {
+#             "Name": "",
+#             "KeyBody": [...]
+#         }
+#      ]
+# }
+def init_book(d):
     global gBooks
     # load book unit
     # Check valid of the book
@@ -222,7 +255,7 @@ def check_and_init_book(d):
         if not isinstance(bunit['KeyBody'], list):
             bunit['KeyBody'] = [bunit['KeyBody']]
         for kunit in bunit[u'KeyBody']:
-            check_and_init_book_keybody(kunit)
+            init_book_keybody(kunit)
         
 
 def load_cmdbook(bookpath):
@@ -262,7 +295,7 @@ def load_cmdbook(bookpath):
             # load a detector
             book['Detector'] = Detector(book, d['InferenceFile'], d['LabelMapFile'])
 
-        check_and_init_book(d)
+        init_book(d)
         book['Sequence'] = d['Sequence']
         gBooks[bookname] = book
 
