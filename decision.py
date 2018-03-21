@@ -135,61 +135,57 @@ gBooks = {
     ]
   }
 }
+
 # Check valid of the diction , initial default value and restore to book
-def check_and_init_book(d, book):
-    global gBooks
-    # load book unit
-    # Check valid of the book
+def check_and_init_book_keybody(kunit):
+    # Init default value
+    if not 'Name' in kunit:
+        kunit['Name'] = ''
+    check_dict = {u'Allow':[u'Percent',u'Tags'],\
+                  u'Disallow':[u'Tags']}
     # Unify the following field to list
-    if not isinstance(d['Sequence'], list):
-        d['Sequence'] = [d['Sequence']]
-    for bunit in d['Sequence']:
-        # Unify the following field to list
-        if not isinstance(bunit['KeyBody'], list):
-            bunit['KeyBody'] = [bunit['KeyBody']]
-        for kunit in bunit[u'KeyBody']:
-            check_dict = {u'Allow':[u'Percent',u'Tags'],\
-                          u'Disallow':[u'Tags']}
+    if not isinstance(kunit['Conditions'], list):
+        kunit['Conditions'] = [kunit['Conditions']]
+    for cunit in kunit[u'Conditions']:
+        # Init default value
+        if not 'Name' in cunit:
+            cunit['Name'] = ''
+        if not 'Disallow' in cunit:
+            cunit['Disallow'] = []
+        for uk in check_dict.keys():
             # Unify the following field to list
-            if not isinstance(kunit['Conditions'], list):
-                kunit['Conditions'] = [kunit['Conditions']]
-            for cunit in kunit[u'Conditions']:
-                for uk in check_dict.keys():
-                    # Unify the following field to list
-                    if not isinstance(cunit[uk], list):
-                        cunit[uk] = [cunit[uk]]
-                    for unit in cunit[uk]:
-                        for val in check_dict[uk]:
-                            assert unit.has_key(val), \
-                                "%s not in file:%s-[%s], \
-                                [u'KeyBody']-[%s], \
-                                [u'Conditions']-[%s], \
-                                [%s]-[%s]"\
-                                %(val,fname,\
-                                bunit[u'Name'],\
-                                kunit[u'Name'],\
-                                cunit[u'Name'],\
-                                uk,unit[u'Name'])
-            check_dict = {u'Click':[u'DecisionPeriod',u'StartTag',\
-                                    u'StartOffset',u'EndTag',\
-                                    u'EndOffset',u'Duration'],\
-                          u'Goto':[u'DecisionPeriod',u'BookName']}
-            # Unify the following field to list
-            if not isinstance(kunit['Actions'], list):
-                kunit['Actions'] = [kunit['Actions']]
-            for cunit in kunit[u'Actions']:
-                key = cunit[u'Command']
-                for val in check_dict[key]:
-                    assert cunit.has_key(val), \
+            if not isinstance(cunit[uk], list):
+                cunit[uk] = [cunit[uk]]
+            for unit in cunit[uk]:
+                for val in check_dict[uk]:
+                    assert unit.has_key(val), \
                         "%s not in file:%s-[%s], \
                         [u'KeyBody']-[%s], \
-                        [u'Actions']-[%s])"\
+                        [u'Conditions']-[%s], \
+                        [%s]-[%s]"\
                         %(val,fname,\
                         bunit[u'Name'],\
                         kunit[u'Name'],\
-                        cunit[u'Name'])
-    # each book include a sequence of decision book unit
-    book['Sequence'] = d['Sequence']
+                        cunit[u'Name'],\
+                        uk,unit[u'Name'])
+    check_dict = {u'Click':[u'DecisionPeriod',u'StartTag',\
+                            u'StartOffset',u'EndTag',\
+                            u'EndOffset',u'Duration'],\
+                  u'Goto':[u'DecisionPeriod',u'BookName']}
+    # Unify the following field to list
+    if not isinstance(kunit['Actions'], list):
+        kunit['Actions'] = [kunit['Actions']]
+    for cunit in kunit[u'Actions']:
+        key = cunit[u'Command']
+        for val in check_dict[key]:
+            assert cunit.has_key(val), \
+                "%s not in file:%s-[%s], \
+                [u'KeyBody']-[%s], \
+                [u'Actions']-[%s])"\
+                %(val,fname,\
+                bunit[u'Name'],\
+                kunit[u'Name'],\
+                cunit[u'Name'])
 #            if kunit.has_key(u'GoBack'):
 #                for cunit in kunit[u'GoBack']:
 #                    # Doing the type check
@@ -209,6 +205,25 @@ def check_and_init_book(d, book):
 #                            bunit[u'Name'],\
 #                            kunit[u'Name'],\
 #                            cunit[u'Name'])
+
+# Check valid of the source book diction , initial default value
+def check_and_init_book(d):
+    global gBooks
+    # load book unit
+    # Check valid of the book
+    # Unify the following field to list
+    if not isinstance(d['Sequence'], list):
+        d['Sequence'] = [d['Sequence']]
+    for bunit in d['Sequence']:
+        # Init default value
+        if not 'Name' in bunit:
+            bunit['Name'] = ''
+        # Unify the following field to list
+        if not isinstance(bunit['KeyBody'], list):
+            bunit['KeyBody'] = [bunit['KeyBody']]
+        for kunit in bunit[u'KeyBody']:
+            check_and_init_book_keybody(kunit)
+        
 
 def load_cmdbook(bookpath):
     global gBooks
@@ -247,7 +262,8 @@ def load_cmdbook(bookpath):
             # load a detector
             book['Detector'] = Detector(book, d['InferenceFile'], d['LabelMapFile'])
 
-        check_and_init_book(d, book)
+        check_and_init_book(d)
+        book['Sequence'] = d['Sequence']
         gBooks[bookname] = book
 
             
