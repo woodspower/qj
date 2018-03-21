@@ -1,5 +1,5 @@
 {
-    "Name": "Main",
+    "InferenceName": "Main",
     "InferenceFile": "/home/leo/qj/object_detection/data/Main/inference_ssd/frozen_inference_graph.pb",
     "LabelMapFile": "/home/leo/qj/object_detection/data/Main/pascal_label_map.pbtxt",
     "Sequence": [
@@ -8,18 +8,15 @@
             "KeyBody": [
                 {
                     "Name": "ZhuXian Task",
-                    "Conditions": [
-                        {
+                    "Conditions": {
                             "Name": "",
-                            "Allow": [
-                                {
+                            "Allow":{
                                     "Name": "",
                                     "Percent": 1.0,
                                     "Tags": [
                                         "tZhuXian"
                                     ]
-                                }
-                            ],
+                            },
                             "Disallow": [
                                 {
                                     "Name": "cancel when task not ready",
@@ -36,8 +33,7 @@
                                     ]
                                 }
                             ]
-                        }
-                    ],
+                    },
                     "Actions": [
                         {
                             "Name": "Click center",
