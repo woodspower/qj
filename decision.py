@@ -138,9 +138,7 @@ gBooks = {
 # Check valid of the diction , initial default value and restore to book
 def check_and_init_book(d, book):
     global gBooks
-    # load main book unit
-    # each book include a sequence of decision book unit
-    book['Sequence'] = d['Sequence']
+    # load book unit
     # Check valid of the book
     # Unify the following field to list
     if not isinstance(d['Sequence'], list):
@@ -190,6 +188,8 @@ def check_and_init_book(d, book):
                         bunit[u'Name'],\
                         kunit[u'Name'],\
                         cunit[u'Name'])
+    # each book include a sequence of decision book unit
+    book['Sequence'] = d['Sequence']
 #            if kunit.has_key(u'GoBack'):
 #                for cunit in kunit[u'GoBack']:
 #                    # Doing the type check
@@ -221,6 +221,7 @@ def load_cmdbook(bookpath):
         logging.info('Loading book: %s'%(fname))
         fin = open(os.path.join(bookpath,fname), 'r')
         d = json.load(fin, object_pairs_hook=OrderedDict)
+        #d = json.load(fin)
         fin.close()
         infname = d['InferenceName']
         bookname = os.path.basename(fname).split('.')[0].strip()
