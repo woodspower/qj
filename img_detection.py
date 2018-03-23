@@ -15,7 +15,6 @@ import sys
 import tensorflow as tf
 import logging
 import time
-logging.basicConfig(filename='command.log', level=logging.DEBUG)
 
 from collections import defaultdict
 from io import StringIO
@@ -74,8 +73,11 @@ class Detector:
         # that returns a dictionary mapping integers to appropriate string
         # labels would be fine
         label_map = label_map_util.load_labelmap(label_file)
-        categories = label_map_util.convert_label_map_to_categories(label_map, max_num_classes=MAX_NUM_CLASSES, use_display_name=True)
+        categories = label_map_util.convert_label_map_to_categories(\
+                    label_map, max_num_classes=MAX_NUM_CLASSES, use_display_name=True)
         self.category_index = label_map_util.create_category_index(categories)
+        self.logger = logging.getLogger('detect-%s'%(name))
+        self.logger.setLevel(logging.DEBUG)
 
         # ## Load a (frozen) Tensorflow model into memory.
         detection_graph = tf.Graph()
@@ -109,14 +111,14 @@ class Detector:
         image_np_expanded = np.expand_dims(image_np, axis=0)
         # Actual detection.
         loaded_time = time.time()
-        logging.debug("Detection of loading image time: %f"%(loaded_time-start_time))
+        self.logger.debug("loading image time: %f"%(loaded_time-start_time))
         start_time = loaded_time
         (boxes, scores, classes, num) = self.sess.run(
           [self.detection_boxes, self.detection_scores, self.detection_classes, self.num_detections],
           feed_dict={self.image_tensor: image_np_expanded})
 
         detected_time = time.time()
-        logging.debug("Detection of detecting image time: %f"%(detected_time-start_time))
+        self.logger.debug("detecting image time: %f"%(detected_time-start_time))
         # Visualization of the results of a detection.
 #        vis_util.visualize_boxes_and_labels_on_image_array(
 #          image_np,

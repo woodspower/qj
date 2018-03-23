@@ -9,7 +9,6 @@ import numpy as np
 import struct
 import subprocess
 
-import datetime
 import sqlite3
 import pickle
 import json
@@ -24,20 +23,21 @@ from device import Device
 
 class Decisionor:
     def __init__(self, device, bookPath):
-        self.gStartTime = datetime.datetime.now()
+        self.gStartTime = time.time()
         self.gLastDecisionActions = []
         self.gDevice = device
         self.gBooks = {}
-        logging.basicConfig(filename='command-%s.log'%(device.name), level=logging.DEBUG)
+        self.logger = logging.getLogger('decision-%s'%(device.ip))
+        self.logger.setLevel(logging.DEBUG)
         self.load_cmdbook(bookPath)
 
 
-    def print_delta_time(self, tagname):
-        gStartTime = self.gStartTime
-        current_time = datetime.datetime.now()
-        delta_time = current_time - gStartTime
-        gStartTime = current_time
-        print(tagname, " : ", delta_time.seconds)
+    def getDelta(self, tagname=''):
+        start = self.gStartTime
+        current = time.time()
+        delta = current - start
+        self.gStartTime = current
+        return delta
 
 
     # Check valid of the diction , initial default value
@@ -235,8 +235,7 @@ class Decisionor:
             if not fname.endswith(".cmd"):
                 continue
 
-            print 'load cmdbook:', fname
-            logging.info('Loading book: %s'%(fname))
+            self.logger.info('LOADING book: %s'%(fname))
             fin = open(os.path.join(bookpath,fname), 'r')
             d = json.load(fin, object_pairs_hook=OrderedDict)
             #d = json.load(fin)
@@ -248,7 +247,7 @@ class Decisionor:
 
             book = {}
             if infname in gBooks:
-                print("book %s in file:%s using existing inference:%s"%(bookname,fname,infname))
+                self.logger.debug("book %s in file:%s using existing inference:%s"%(bookname,fname,infname))
                 book['label2id_map'] = gBooks['infname']['label2id_map']
                 book['id2label_map'] = gBooks['infname']['id2label_map']
                 book['Detector'] = gBooks['infname']['Detector']
@@ -263,7 +262,8 @@ class Decisionor:
                 book['label2id_map'] = label2id_map
                 book['id2label_map'] = id2label_map
                 # load a detector
-                book['Detector'] = Detector(book, d['InferenceFile'], d['LabelMapFile'])
+                detectorName = self.gDevice.ip+'-'+bookname
+                book['Detector'] = Detector(detectorName, d['InferenceFile'], d['LabelMapFile'])
 
             self.init_book(d)
             book['Sequence'] = d['Sequence']
@@ -271,7 +271,7 @@ class Decisionor:
 
             
     
-    def decision_do(self, detection_time, tags, bookname, pos_dict):
+    def decision_do(self, tags, bookname, pos_dict):
         gBooks = self.gBooks
         correct_decision = False
 
@@ -284,13 +284,13 @@ class Decisionor:
         book = gBooks[bookname]
 
         # Loop the book
-        logging.info('Loop the book')
+        self.logger.debug('Loop the book')
         # record the bunit which need to adjust sequence
         for bunit in book['Sequence']:
             kunit2move = {}
             for kunit in bunit['KeyBody']:
                 # Check conditions is ok or not.
-                logging.info('Check condition [%s][%s][%s]'\
+                self.logger.debug('Check condition [%s][%s][%s]'\
                             %(bookname, bunit[u'Name'],kunit[u'Name']))
                 disallow_result = False
                 allow_result = False
@@ -329,7 +329,7 @@ class Decisionor:
                                 if delta <= disallow[u'Seconds']:
                                     continue
                             disallow_result = True
-                            logging.info('Not satisfied by tag disallow:%s'%(tag))
+                            self.logger.debug('Not satisfied by tag disallow:%s'%(tag))
                             break
                     # Check allow condition before check disallow
                     # otherwise some disallow condition will always happen
@@ -348,8 +348,8 @@ class Decisionor:
                             if pos_dict[tag]:
                                 allow_num += 1
                                 taglist.append(tag)
-                        logging.debug('tag require:%d/100 of %s'%(100*allow[u'Percent'], allow[u'Tags']))
-                        logging.debug('tag detect: %s'%(str(taglist)))
+                        self.logger.debug('tag require:%d/100 of %s'%(100*allow[u'Percent'], allow[u'Tags']))
+                        self.logger.debug('tag detect: %s'%(str(taglist)))
                         if(allow_num >= allow_num_req):
                             allow_result = True
                             break
@@ -361,7 +361,7 @@ class Decisionor:
                         kunit2move = kunit
                     continue
                 # kunit condition is ok, do the action.
-                logging.info('Condition is ready...')
+                self.logger.debug('Condition is ready...')
                 correct_decision=True
                 self.do_action(bookname, bunit, kunit, tags, pos_dict)
                 # Only one of the first condition in KeyBody list will be executed
@@ -370,7 +370,7 @@ class Decisionor:
             # this adjust is import to avoid dead loop switch in two tasks
             # DO NOT adjust if no condition is correct last time
             if correct_decision and kunit2move:
-                logging.info('Adjust kunit to end. Book:%s, bunit:%s, kunit:%s'\
+                self.logger.info('Adjust kunit to end. Book:%s, bunit:%s, kunit:%s'\
                             %(bookname,bunit['Name'],kunit2move))
                 bunit['KeyBody'].remove(kunit2move)
                 bunit['KeyBody'].append(kunit2move)
@@ -385,21 +385,23 @@ class Decisionor:
         num = len(actions)
         for idx in range(num):
             action = actions[idx]
-            current_time = datetime.datetime.now()
-            logging.info('entering action: %s'%(str(action)))
+            current_time = time.time()
+            self.logger.debug('entering action: %s'%(str(action)))
             if len(gLastDecisionActions) > idx:
                 if gLastDecisionActions[idx]['Action'] == action:
-                    delta = (current_time - gLastDecisionActions[idx]['Time']).total_seconds()*1000
+                    delta = (current_time - gLastDecisionActions[idx]['Time'])*1000
                     decision_period = float(action[u'DecisionPeriod'])
                     if(delta < decision_period):
-                        logging.info('delay this action since delta:%f < decision period:%f'%(delta, decision_period))
+                        self.logger.debug('delay this action since \
+                            delta:%f < decision period:%f'%(delta, decision_period))
                         continue
             if action[u'Command'] == u'Click':
                 self.do_action_click(bookname, actions, idx, tags, pos_dict)
             elif action[u'Command'] == u'Goto':
                 self.do_action_goto(bookname, actions, idx, tags, pos_dict)
             else:
-                logging.info('this action is tbd....')
+                self.logger.info('DO ACTION:%s, PARAM:this action is tbd..., BODY:%s'\
+                                %(action['Command'],str(action)))
                 continue
             
     def do_action_goto(self, current_book, actions, idx, tags, pos_dict):
@@ -408,25 +410,26 @@ class Decisionor:
         # If the 'GotoBook' find nothing, will come back to UpperBook.
         action = actions[idx]
         target_book = action[u'BookName']
-        logging.info('From book:%s goto book:%s'%(current_book, target_book))
         if(len(gLastDecisionActions) <= idx):
             gLastDecisionActions.append({ 'CurrentBook':current_book, \
-                                    'Time' : datetime.datetime.now(), \
+                                    'Time' : time.time(), \
                                     'Action': action, \
                                     'Command':action['Command'],\
                                     'Params': { 'target_book':target_book }
                                     })
         else:
             gLastDecisionActions[idx] = { 'CurrentBook':current_book, \
-                                    'Time' : datetime.datetime.now(), \
+                                    'Time' : time.time(), \
                                     'Action': action, \
                                     'Command':action['Command'],\
                                     'Params': { 'target_book':target_book }
                                     }
-        print('DO: %s'%(str(gLastDecisionActions[idx])))
-        logging.info('DO: %s'%(str(gLastDecisionActions[idx])))
+        param = 'From book:%s goto book:%s'%(current_book, target_book)
+        self.logger.info('DO ACTION:Goto, PARAM:%s, BODY:%s'\
+                        %(param, gLastDecisionActions[idx]))
         self.decision_loop(target_book)
-        logging.info('End Loop inside book: %s'%(target_book))
+        param = 'End Loop inside book: %s, back to:%s'%(target_book, current_book)
+        self.logger.info('DO ACTION:GoBack, PARAM:%s'%(param))
 
 
     def do_action_click(self, current_book, actions, idx, tags, pos_dict):
@@ -459,7 +462,9 @@ class Decisionor:
                 start_key = key
                 break
         if not start_key:
-            logging.info('action cancel since no match StartTag : %s'%(str(action[u'StartTag'])))
+            param = 'No match StartTag : %s'%(str(action[u'StartTag']))
+            self.logger.info('CANCEL ACTION:Click, PARAM:%s, BODY:%s'\
+                            %(param, str(action)))
             return
         #find click start point
         #start point will caculate from center point of the start_key
@@ -486,7 +491,7 @@ class Decisionor:
             ystart = 5
         if ystart > im_height: 
             ystart = im_height-1
-        logging.debug('[start point] key:%s, rxmin:%f, rymin:%f, rxmax:%f, rymax:%f, \
+        self.logger.debug('[start point] key:%s, rxmin:%f, rymin:%f, rxmax:%f, rymax:%f, \
                         rxoffset:%f, ryoffset:%f, xstart:%d, ystart:%d'%\
                         (start_key, rxmin, rymin, rxmax, rymax, \
                         rxoffset, ryoffset, xstart, ystart))
@@ -524,7 +529,7 @@ class Decisionor:
                 yend = 1
             if yend > im_height: 
                 yend = im_height-1
-            logging.debug('[end point] key:%s, rxmin:%f, rymin:%f, rxmax:%f, rymax:%f, \
+            self.logger.debug('[end point] key:%s, rxmin:%f, rymin:%f, rxmax:%f, rymax:%f, \
                             rxoffset:%f, ryoffset:%f, xend:%d, yend:%d'%\
                             (end_key, rxmin, rymin, rxmax, rymax, \
                             rxoffset, ryoffset, xend, yend))
@@ -537,7 +542,7 @@ class Decisionor:
         gDevice.swipe(xstart, ystart, xend, yend, duration)
         if(len(gLastDecisionActions) <= idx):
             gLastDecisionActions.append({ 'CurrentBook':current_book, \
-                                    'Time' : datetime.datetime.now(), \
+                                    'Time' : time.time(), \
                                     'Action': action, \
                                     'Command':action['Command'],\
                                     'Params': { 'start_key':start_key,'xstart':xstart,'ystart':ystart,\
@@ -545,15 +550,15 @@ class Decisionor:
                                     })
         else:
             gLastDecisionActions[idx] = { 'CurrentBook':current_book, \
-                                    'Time' : datetime.datetime.now(), \
+                                    'Time' : time.time(), \
                                     'Action': action, \
                                     'Command':action['Command'],\
                                     'Params': { 'start_key':start_key,'xstart':xstart,'ystart':ystart,\
                                                 'end_key':end_key,'xend':xend,'yend':yend,'duration':duration}
                                     }
-        print('DO: %s'%(str(gLastDecisionActions[idx])))
-        logging.info('DO: %s'%(str(gLastDecisionActions[idx])))
-
+        param = str(gLastDecisionActions[idx])
+        self.logger.info('DO ACTION:Click, PARAM:%s, BODY:%s'\
+                        %(param, str(action)))
     
     # range format should be a string like '2~5' or '3'
     def parse_range(self, fromto):
@@ -578,36 +583,41 @@ class Decisionor:
         gDevice = self.gDevice
         gBooks = self.gBooks
         if not bookname in gBooks:
-            logging.info('book:%s do not exist'%(bookname))
+            self.logger.warn('book:%s do not exist'%(bookname))
             time.sleep(1)
             return
         book = gBooks[bookname]
         while True:
-            print('Loop inside book: %s'%(bookname))
-            logging.info('Loop inside book: %s'%(bookname))
-            self.print_delta_time("Call pull")
+            self.logger.info('===============START ACTION: Loop inside book: %s============'%(bookname))
+            self.getDelta("Before Call getNumpyData")
             err, image_size, img_np = gDevice.getNumpyData()
+            self.logger.debug('Device:%s, getNumpyData used:%s seconds'%(gDevice.ip, self.getDelta()))
             if err:
-                print 'call screenshot failed, sleep 5s',err
+                self.logger.warn('call Device:%s, getNumpyData failed, \
+                                  sleep 5s, error:%s'%(gDevice.ip, err))
                 time.sleep(5)
                 continue
-            self.print_delta_time("After Call pull")
+            self.getDelta("Before Call detection")
             (image_np, tag_boxes, tag_scores, tag_classes, tag_num) = book['Detector'].detect(img_np)
-            tags = {'image_size':image_size, 'tag_boxes':tag_boxes, 'tag_scores':tag_scores, 'tag_classes':tag_classes, 'tag_num':tag_num}
-            self.print_delta_time("After Call detection")
+            self.logger.debug('Book:%s, detect used:%s seconds'%(bookname, self.getDelta()))
+            tags = {'image_size':image_size, \
+                    'tag_boxes':tag_boxes, \
+                    'tag_scores':tag_scores, \
+                    'tag_classes':tag_classes,\
+                    'tag_num':tag_num}
             #store the detected object index position in tags
             pos_dict = {}
             for label_name in book['label2id_map']:
                 pos_dict[label_name] = []
             #box should have minimun 60% possibility
-            min_score_thresh = .4
+            min_score_thresh = .6
             for i in range(tag_num):
                 if(tag_scores[i]<min_score_thresh): 
                     break 
                 pos_dict[book['id2label_map'][tag_classes[i]]].append(i)
 
             if not pos_dict:
-                logging.info('book:%s do not detect any tags'%(bookname))
+                self.logger.debug('book:%s do not detect any tags'%(bookname))
                 #subbook will be terminated
                 if(bookname!=u'Index'):
                     break
@@ -626,10 +636,10 @@ class Decisionor:
                     for pos in pos_dict[name]:
                         print 'tag score:', tag_scores[pos]
                         print 'tag boxe:', tag_boxes[pos]
-            correct = self.decision_do(datetime.datetime.now(), tags, bookname, pos_dict)
+            correct = self.decision_do(tags, bookname, pos_dict)
             #subbook will be terminated if meet with incorrect decision
             if(bookname!=u'Index' and correct==False):
-                logging.info('book:%s do not satify any condition'%(bookname))
+                self.logger.debug('book:%s do not satify any condition'%(bookname))
                 break
             time.sleep(1)
 
