@@ -420,6 +420,25 @@
                     ]
                 }
             ]
+        },
+        {
+            "Name": "Click Actor to keep active in following cases",
+            "KeyBody": {
+                    "Name": "If there is LeaveBox, and FightOn",
+                    "Conditions": {
+                            "Allow": {
+                                    "Tags": [
+                                        "FightOn",
+                                        "LeaveBox"
+                                    ]
+                                }
+                        },
+                    "Actions": {
+                            "Command": "Click",
+                            "DecisionPeriod": 5000,
+                            "StartTag":[ "Actor"]
+                        }
+                }
         }
 
     ]
