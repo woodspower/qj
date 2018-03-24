@@ -52,6 +52,9 @@ def main(argv):
             device = Device('qj', ip)
             decisionor = Decisionor(device, 'qj_book')
             decisionor.decision_loop()
+            param = '===============END JOBS for device:%s============'%(ip)
+            print param
+            logger.info(param)
             exit()
 
     print("In the parent process after forking the child {}".format(pid))

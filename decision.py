@@ -31,6 +31,15 @@ class Decisionor:
         self.logger.setLevel(logging.DEBUG)
         self.load_cmdbook(bookPath)
 
+    def jobClear(self, bookname):
+        job = self.gBooks[bookname]
+        # each time add 0.1, check muli-times will finish, when it>=1.0
+        job['JobClear'] = job['JobClear'] + 0.1
+
+    def jobReset(self):
+        gBooks = self.gBooks
+        for bookname in gBooks:
+            gBooks[bookname]['JobClear'] = 0.0
 
     def getDelta(self, tagname=''):
         start = self.gStartTime
@@ -166,6 +175,7 @@ class Decisionor:
         }
         cmd = cunit[u'Command']
         tmpl = acTemplate["Action_"+cmd]
+        # TODO: support StartTag,EndTag list convert
         for key in tmpl:
             # Set default value for cunit
             if not key in cunit:
@@ -267,13 +277,15 @@ class Decisionor:
 
             self.init_book(d)
             book['Sequence'] = d['Sequence']
+            # How much jobs already done in this book
+            book['JobClear'] = 0.0
             gBooks[bookname] = book
 
             
     
     def decision_do(self, tags, bookname, pos_dict):
         gBooks = self.gBooks
-        correct_decision = False
+        jobUpdated = False
 
         image_size = tags['image_size']
         boxes = tags['tag_boxes']
@@ -362,25 +374,26 @@ class Decisionor:
                     continue
                 # kunit condition is ok, do the action.
                 self.logger.debug('Condition is ready...')
-                correct_decision=True
-                self.do_action(bookname, bunit, kunit, tags, pos_dict)
-                # Only one of the first condition in KeyBody list will be executed
-                break
+                jobUpdated = self.do_action(bookname, bunit, kunit, tags, pos_dict)
+                if jobUpdated:
+                    # Only one of the first real actived condition in KeyBody list will be executed
+                    break
             # adjust priority of the current task, put it to end of Keybody list
             # this adjust is import to avoid dead loop switch in two tasks
             # DO NOT adjust if no condition is correct last time
-            if correct_decision and kunit2move:
+            if jobUpdated and kunit2move:
                 self.logger.info('Adjust kunit to end. Book:%s, bunit:%s, kunit:%s'\
                             %(bookname,bunit['Name'],kunit2move))
                 bunit['KeyBody'].remove(kunit2move)
                 bunit['KeyBody'].append(kunit2move)
                 kunit2move = {}
 
-        return correct_decision
+        return jobUpdated
             
 
     def do_action(self, bookname, bunit, kunit, tags, pos_dict):
         gLastDecisionActions = self.gLastDecisionActions
+        jobUpdated = False
         actions = kunit[u'Actions']
         num = len(actions)
         for idx in range(num):
@@ -394,18 +407,25 @@ class Decisionor:
                     if(delta < decision_period):
                         self.logger.debug('delay this action since \
                             delta:%f < decision period:%f'%(delta, decision_period))
+                        jobUpdated = True
                         continue
             if action[u'Command'] == u'Click':
-                self.do_action_click(bookname, actions, idx, tags, pos_dict)
+                temp = self.do_action_click(bookname, actions, idx, tags, pos_dict)
+                if temp == True:
+                    jobUpdated = True
             elif action[u'Command'] == u'Goto':
-                self.do_action_goto(bookname, actions, idx, tags, pos_dict)
+                temp = self.do_action_goto(bookname, actions, idx, tags, pos_dict)
+                if temp == True:
+                    jobUpdated = True
             else:
                 self.logger.info('DO ACTION:%s, PARAM:this action is tbd..., BODY:%s'\
                                 %(action['Command'],str(action)))
                 continue
+        return jobUpdated
             
     def do_action_goto(self, current_book, actions, idx, tags, pos_dict):
         gLastDecisionActions = self.gLastDecisionActions
+        jobUpdated = False
         # Nested call decision_loop('GotoBook')
         # If the 'GotoBook' find nothing, will come back to UpperBook.
         action = actions[idx]
@@ -427,13 +447,16 @@ class Decisionor:
         param = 'From book:%s goto book:%s'%(current_book, target_book)
         self.logger.info('DO ACTION:Goto, PARAM:%s, BODY:%s'\
                         %(param, gLastDecisionActions[idx]))
-        self.decision_loop(target_book)
+        jobUpdated = self.decision_loop(target_book)
         param = 'End Loop inside book: %s, back to:%s'%(target_book, current_book)
         self.logger.info('DO ACTION:GoBack, PARAM:%s'%(param))
+        return jobUpdated
 
 
     def do_action_click(self, current_book, actions, idx, tags, pos_dict):
         gLastDecisionActions = self.gLastDecisionActions
+        # Always need to updated if click ready
+        jobUpdated = True
         gDevice = self.gDevice
         action = actions[idx]
         im_width, im_height = tags['image_size']
@@ -441,19 +464,6 @@ class Decisionor:
         scores = tags['tag_scores']
         classes = tags['tag_classes']
         num = tags['tag_num']
-
-    #    print("==========================boxes========================\n")
-    #    print(boxes)
-    #    print("==========================scores========================\n")
-    #    print(scores)
-    #    print("==========================classes========================\n")
-    #    print(classes)
-    #    print("==========================num========================\n")
-    #    print(num)
-    #    print("==========================pos_dict========================\n")
-    #    print(pos_dict)
-    #    print("==========================image_size========================\n")
-    #    print(tags['image_size'])
 
         #find click start point where first StartTag[...] match
         start_key = ''
@@ -465,7 +475,7 @@ class Decisionor:
             param = 'No match StartTag : %s'%(str(action[u'StartTag']))
             self.logger.info('CANCEL ACTION:Click, PARAM:%s, BODY:%s'\
                             %(param, str(action)))
-            return
+            return jobUpdated
         #find click start point
         #start point will caculate from center point of the start_key
         #x = ( rxmin + rxoffset*(rxmax-rxmin) )*im_width
@@ -559,6 +569,7 @@ class Decisionor:
         param = str(gLastDecisionActions[idx])
         self.logger.info('DO ACTION:Click, PARAM:%s, BODY:%s'\
                         %(param, str(action)))
+        return jobUpdated
     
     # range format should be a string like '2~5' or '3'
     def parse_range(self, fromto):
@@ -582,19 +593,20 @@ class Decisionor:
     def decision_loop(self, bookname=u'Index'): 
         gDevice = self.gDevice
         gBooks = self.gBooks
+        jobUpdated = False
         if not bookname in gBooks:
             self.logger.warn('book:%s do not exist'%(bookname))
-            time.sleep(1)
-            return
+            return jobUpdated
         book = gBooks[bookname]
         while True:
             self.logger.info('===============START ACTION: Loop inside book: %s============'%(bookname))
             self.getDelta("Before Call getNumpyData")
             err, image_size, img_np = gDevice.getNumpyData()
-            self.logger.debug('Device:%s, getNumpyData used:%s seconds'%(gDevice.ip, self.getDelta()))
+            self.logger.debug('DETECT: getNumpyData used:%s seconds, image size:%s'\
+                            %(self.getDelta(),image_size))
             if err:
-                self.logger.warn('call Device:%s, getNumpyData failed, \
-                                  sleep 5s, error:%s'%(gDevice.ip, err))
+                self.logger.warn('getNumpyData failed, \
+                                  sleep 5s, error:%s'%(err))
                 time.sleep(5)
                 continue
             self.getDelta("Before Call detection")
@@ -610,14 +622,25 @@ class Decisionor:
             for label_name in book['label2id_map']:
                 pos_dict[label_name] = []
             #box should have minimun 60% possibility
-            min_score_thresh = .6
+            min_score_thresh = .8
             for i in range(tag_num):
                 if(tag_scores[i]<min_score_thresh): 
                     break 
                 pos_dict[book['id2label_map'][tag_classes[i]]].append(i)
 
-            if not pos_dict:
-                self.logger.debug('book:%s do not detect any tags'%(bookname))
+            tagsFound = {}
+            for name in pos_dict:
+                if pos_dict[name]:
+                    tagsFound[name] = {'scores':[],'boxes':[]}
+                    for pos in pos_dict[name]:
+                        tagsFound[name]['scores'].append(tag_scores[pos])
+                        tagsFound[name]['boxes'].append(tag_boxes[pos])
+            
+            self.logger.debug('DETECT: found tags:%s'%(tagsFound.keys()))
+            self.logger.debug('DETECT: tags detail:%s'%(tagsFound))
+
+            if not tagsFound:
+                self.logger.debug('DETECT: book:%s do not detect any tags'%(bookname))
                 #subbook will be terminated
                 if(bookname!=u'Index'):
                     break
@@ -625,22 +648,29 @@ class Decisionor:
                 time.sleep(1)
                 continue
 
-            print("==========================image_size========================\n")
-            print('book:',bookname)
-            print(tags['image_size'])
-    #        print("==========================pos_dict========================\n")
-    #        print(pos_dict)
-            for name in pos_dict:
-                if pos_dict[name]:
-                    print 'found tag name:', name
-                    for pos in pos_dict[name]:
-                        print 'tag score:', tag_scores[pos]
-                        print 'tag boxe:', tag_boxes[pos]
-            correct = self.decision_do(tags, bookname, pos_dict)
+            jobUpdated = self.decision_do(tags, bookname, pos_dict)
             #subbook will be terminated if meet with incorrect decision
-            if(bookname!=u'Index' and correct==False):
-                self.logger.debug('book:%s do not satify any condition'%(bookname))
-                break
+            #if(bookname!=u'Index' and jobUpdated==False):
+            if(jobUpdated==True):
+                #job updated
+                self.jobReset()
+            else:
+                self.jobClear(bookname)
+                self.logger.debug('DETECT: book:%s do not satify any condition,wrong book or job clear:[%f].'\
+                                %(bookname, self.gBooks[bookname]['JobClear']))
+                # switching between books need double check, so Index book cannot break directly
+                if(bookname!='Index'):
+                    break
+                # It has been double checked 
+                elif(self.gBooks['Index']['JobClear'] >=1.0):
+                    break
+            # Continue to next round.
+            jobUpdated = False
             time.sleep(1)
+        return jobUpdated
+
+
+
+
 
 
