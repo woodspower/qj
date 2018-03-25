@@ -9,81 +9,48 @@
                 {
                     "Name": "ZhuXian Task",
                     "Conditions": {
-                            "Name": "",
-                            "Allow":{
-                                    "Name": "",
-                                    "Percent": 1.0,
-                                    "Tags": [
-                                        "tZhuXian"
-                                    ]
-                            },
+                            "Allow":{ "Tags": "tZhuXian" },
                             "Disallow": [
                                 {
                                     "Name": "cancel when task not ready",
-                                    "Seconds": 0,
-                                    "Tags": [
-                                        "tTaskNotReady"
-                                    ]
+                                    "Tags": [ "tTaskNotReady" ]
                                 },
                                 {
                                     "Name": "cancel when fightoff for 60secs",
                                     "Seconds": 60,
-                                    "Tags": [
-                                        "FightOff"
-                                    ]
+                                    "Tags": [ "FightOff" ]
                                 }
                             ]
                     },
-                    "Actions": [
-                        {
-                            "Name": "Click center",
+                    "Actions": {
                             "Command": "Click",
-                            "DecisionPeriod": 5000,
-                            "StartTag": [
-                                "tZhuXian"
-                            ],
-                            "StartOffset": [
-                                0.5,
-                                0.5
-                            ],
-                            "EndTag": [],
-                            "EndOffset": [],
-                            "Duration": "2~5"
+                            "DecisionPeriod": 5000
                         }
-                    ]
                 },
                 {
                     "Name": "RiChang Task",
-                    "Conditions": [
-                        {
-                            "Name": "",
-                            "Allow": [
-                                {
-                                    "Name": "",
-                                    "Percent": 1.0,
-                                    "Tags": [
-                                        "tRiChang"
-                                    ]
-                                }
-                            ],
-                            "Disallow": []
+                    "Conditions": {
+                            "Allow": { "Tags": "tRiChang" }
+                        },
+                    "Actions": {
+                            "Command": "Click",
+                            "DecisionPeriod": 5000
                         }
-                    ],
+                },
+                {
+                    "Name": "Select Copier Menu",
+                    "Conditions": {
+                            "Jobs": {"Bookname": "CopierMenu"},
+                            "Allow": {"Tags": "aCopy"}
+                    },
                     "Actions": [
                         {
-                            "Name": "Click center",
                             "Command": "Click",
-                            "DecisionPeriod": 5000,
-                            "StartTag": [
-                                "tRiChang"
-                            ],
-                            "StartOffset": [
-                                0.5,
-                                0.5
-                            ],
-                            "EndTag": [],
-                            "EndOffset": [],
-                            "Duration": "2~5"
+                            "DecisionPeriod": 5000
+                        },
+                        {
+                            "PresetPeriod": 2000,
+                            "Command": "Reload"
                         }
                     ]
                 }

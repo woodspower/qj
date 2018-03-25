@@ -10,13 +10,13 @@
                     "Name": "Select Copier Submenu",
                     "Conditions": {
                             "Jobs": {"Bookname": "CopierSubmenu"},
-                            "Allow": {"Tags": "CopierOff"}
+                            "Allow": {"Tags": ["CopierOff"]}
                     },
                     "Actions": [
                         {
                             "Command": "Click",
                             "DecisionPeriod": 5000,
-                            "StartTag": "CopierOff"
+                            "StartTag": ["CopierOff"]
                         },
                         {
                             "Name": "Reload image",
