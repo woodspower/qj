@@ -41,6 +41,21 @@ class Decisionor:
         for bookname in gBooks:
             gBooks[bookname]['JobClear'] = 0.0
 
+    def jobIsAllClear(self):
+        gBooks = self.gBooks
+        # check whether all the book jobs are cleared.
+        isAllCleared = True
+        for bookname in gBooks:
+            status = gBooks[bookname]['JobClear']
+            print 'STATUS: book %s job cleared:%f'%(bookname,status)
+            if bookname == 'Index':
+                # do not check Index book
+                continue
+            if status < 1.0:
+                isAllCleared = False
+                break
+        return isAllCleared
+
     def getDelta(self, tagname=''):
         start = self.gStartTime
         current = time.time()
@@ -55,7 +70,7 @@ class Decisionor:
         # Init default value from template
         tmpl = {
             "Name": "",
-            "Status": ">0",
+            "ClearedExpr": "<1.0",
             "Bookname": None
         }
         for key in tmpl:
@@ -114,7 +129,7 @@ class Decisionor:
     #        "Jobs": [...]
     #        "Disallow": [...]
     #    }
-    def init_book_keybody_condition(self, cunit):
+    def init_book_keybody_condition(self, cunit, kunit):
         # Init default value
         if not 'Name' in cunit:
             cunit['Name'] = ''
@@ -145,7 +160,7 @@ class Decisionor:
 
     # Check valid of the diction , initial default value
     # Format is as acTemplate.
-    def init_book_keybody_action(self, cunit):
+    def init_book_keybody_action(self, cunit, kunit):
         # Init default value
         acTemplate = {
             "Action_Click": {
@@ -153,17 +168,17 @@ class Decisionor:
                     "Command": "Click",
                     "DecisionPeriod": 0,
                     "PresetPeriod": 0,
-                    "StartTag": None,
-                    "StartOffset": [],
+                    "StartTag": [],
+                    "StartOffset": [0.5, 0.5],
                     "EndTag": [],
-                    "EndOffset": [],
+                    "EndOffset": [0.5, 0.5],
                     "Duration": "20~50"
             },
             "Action_Reload": {
                     "Name": "",
+                    "PresetPeriod": 2000,
                     "Command": "Reload",
-                    "DecisionPeriod": 0,
-                    "PresetPeriod": 2000
+                    "DecisionPeriod": 0
             },
             "Action_Goto": {
                     "Name": "",
@@ -183,6 +198,27 @@ class Decisionor:
             # Some field should not use default
             assert cunit[key] != None, \
                 "key:%s MUST set a value in Action body:%s"%(key,cunit)
+        # Need do some special init for Action_Click.
+        if cmd == 'Click':
+            # if StatTag do not specified, set it to same as condition Tags
+            if not cunit['StartTag']:
+                condTags = []
+                for cond in kunit['Conditions']:
+                    for allow in cond['Allow']:
+                        condTags.extend(allow['Tags'])
+                assert condTags, "StartTag MUST be set or \
+                    Condition Tag MUST be set in KeyBody:%s"%(kunit)
+                cunit['StartTag'] = condTags
+            # Unify the following field to list
+            if not isinstance(cunit['StartTag'], list):
+                cunit['StartTag'] = [cunit['StartTag']]
+            if not isinstance(cunit['EndTag'], list):
+                cunit['EndTag'] = [cunit['EndTag']]
+            if not isinstance(cunit['StartOffset'], list):
+                cunit['StartOffset'] = [cunit['StartOffset']]
+            if not isinstance(cunit['EndOffset'], list):
+                cunit['EndOffset'] = [cunit['EndOffset']]
+            
 
 
     # Check valid of the diction , initial default value
@@ -200,17 +236,18 @@ class Decisionor:
         if not isinstance(kunit['Conditions'], list):
             kunit['Conditions'] = [kunit['Conditions']]
         for cunit in kunit[u'Conditions']:
-            self.init_book_keybody_condition(cunit)
+            self.init_book_keybody_condition(cunit, kunit)
         # Unify the following field to list
         if not isinstance(kunit['Actions'], list):
             kunit['Actions'] = [kunit['Actions']]
         for cunit in kunit[u'Actions']:
-            self.init_book_keybody_action(cunit)
+            self.init_book_keybody_action(cunit, kunit)
 
     # Check valid of the source book diction , initial default value
     # Format is as:
     # {
-    #     "BookName": "",
+    #     "InferenceName": "",
+    #     "Name": "",
     #     "InferenceFile": "",
     #     "LabelMapFile": "",
     #     "Sequence": [
@@ -256,6 +293,8 @@ class Decisionor:
                 "book %s in file:%s is duplicated"%(bookname,fname)
 
             book = {}
+            book['InferenceName'] = d['InferenceName']
+            book['Name'] = bookname
             if infname in gBooks:
                 self.logger.debug("book %s in file:%s using existing inference:%s"%(bookname,fname,infname))
                 book['label2id_map'] = gBooks['infname']['label2id_map']
@@ -283,15 +322,15 @@ class Decisionor:
 
             
     
-    def decision_do(self, tags, bookname, pos_dict):
+    def decision_do(self, tagsDetail, bookname, tagsPos):
         gBooks = self.gBooks
         jobUpdated = False
 
-        image_size = tags['image_size']
-        boxes = tags['tag_boxes']
-        scores = tags['tag_scores']
-        classes = tags['tag_classes']
-        num = tags['tag_num']
+        image_size = tagsDetail['image_size']
+        boxes = tagsDetail['tag_boxes']
+        scores = tagsDetail['tag_scores']
+        classes = tagsDetail['tag_classes']
+        num = tagsDetail['tag_num']
 
         book = gBooks[bookname]
 
@@ -306,9 +345,18 @@ class Decisionor:
                             %(bookname, bunit[u'Name'],kunit[u'Name']))
                 disallow_result = False
                 allow_result = False
+                job_forbid = False
                 for cond in kunit[u'Conditions']:
                     if disallow_result:
                         break
+                    if job_forbid:
+                        break
+                    for job in cond['Jobs']:
+                        if job_forbid:
+                            break
+                        if not eval(str(book['JobClear']) + job['ClearedExpr']):
+                            job_forbid = True
+                            break
                     for disallow in cond[u'Disallow']:
                         if disallow_result:
                             break
@@ -321,11 +369,11 @@ class Decisionor:
                             if not 'timelast' in disallow:
                                 # Last time checked, it is a time.time() float
                                 disallow['timelast'] = 0.0
-                            if not tag in pos_dict:
+                            if not tag in tagsPos:
                                 # clear the timecount
                                 disallow['timelast'] = 0.0
                                 continue
-                            if not pos_dict[tag]:
+                            if not tagsPos[tag]:
                                 # clear the timecount
                                 disallow['timelast'] = 0.0
                                 continue
@@ -355,9 +403,9 @@ class Decisionor:
                         allow_num = 0
                         taglist = []
                         for tag in allow[u'Tags']:
-                            if not pos_dict.has_key(tag):
+                            if not tagsPos.has_key(tag):
                                 continue
-                            if pos_dict[tag]:
+                            if tagsPos[tag]:
                                 allow_num += 1
                                 taglist.append(tag)
                         self.logger.debug('tag require:%d/100 of %s'%(100*allow[u'Percent'], allow[u'Tags']))
@@ -365,7 +413,7 @@ class Decisionor:
                         if(allow_num >= allow_num_req):
                             allow_result = True
                             break
-                if disallow_result or not allow_result:
+                if job_forbid or disallow_result or not allow_result:
                     # adjust priority of the current condition unit, put it to end of list
                     # it is very dangours to change multiple list member at same time
                     # so i just change one at one time
@@ -374,7 +422,7 @@ class Decisionor:
                     continue
                 # kunit condition is ok, do the action.
                 self.logger.debug('Condition is ready...')
-                jobUpdated = self.do_action(bookname, bunit, kunit, tags, pos_dict)
+                jobUpdated = self.do_action(bookname, bunit, kunit, tagsDetail, tagsPos)
                 if jobUpdated:
                     # Only one of the first real actived condition in KeyBody list will be executed
                     break
@@ -391,7 +439,7 @@ class Decisionor:
         return jobUpdated
             
 
-    def do_action(self, bookname, bunit, kunit, tags, pos_dict):
+    def do_action(self, bookname, bunit, kunit, tagsDetail, tagsPos):
         gLastDecisionActions = self.gLastDecisionActions
         jobUpdated = False
         actions = kunit[u'Actions']
@@ -410,11 +458,11 @@ class Decisionor:
                         jobUpdated = True
                         continue
             if action[u'Command'] == u'Click':
-                temp = self.do_action_click(bookname, actions, idx, tags, pos_dict)
+                temp = self.do_action_click(bookname, actions, idx, tagsDetail, tagsPos)
                 if temp == True:
                     jobUpdated = True
             elif action[u'Command'] == u'Goto':
-                temp = self.do_action_goto(bookname, actions, idx, tags, pos_dict)
+                temp = self.do_action_goto(bookname, actions, idx, tagsDetail, tagsPos)
                 if temp == True:
                     jobUpdated = True
             else:
@@ -423,7 +471,7 @@ class Decisionor:
                 continue
         return jobUpdated
             
-    def do_action_goto(self, current_book, actions, idx, tags, pos_dict):
+    def do_action_goto(self, current_book, actions, idx, tagsDetail, tagsPos):
         gLastDecisionActions = self.gLastDecisionActions
         jobUpdated = False
         # Nested call decision_loop('GotoBook')
@@ -453,22 +501,22 @@ class Decisionor:
         return jobUpdated
 
 
-    def do_action_click(self, current_book, actions, idx, tags, pos_dict):
+    def do_action_click(self, current_book, actions, idx, tagsDetail, tagsPos):
         gLastDecisionActions = self.gLastDecisionActions
         # Always need to updated if click ready
         jobUpdated = True
         gDevice = self.gDevice
         action = actions[idx]
-        im_width, im_height = tags['image_size']
-        boxes = tags['tag_boxes']
-        scores = tags['tag_scores']
-        classes = tags['tag_classes']
-        num = tags['tag_num']
+        im_width, im_height = tagsDetail['image_size']
+        boxes = tagsDetail['tag_boxes']
+        scores = tagsDetail['tag_scores']
+        classes = tagsDetail['tag_classes']
+        num = tagsDetail['tag_num']
 
         #find click start point where first StartTag[...] match
         start_key = ''
         for key in action[u'StartTag']:
-            if pos_dict.has_key(key):
+            if tagsPos.has_key(key):
                 start_key = key
                 break
         if not start_key:
@@ -483,7 +531,7 @@ class Decisionor:
         #default offset is (1/2, 1/2) in the center of box
         #all the unit start with 'r' means relative distance
         rxoffset, ryoffset = 0.5, 0.5
-        rymin,rxmin,rymax,rxmax = boxes[pos_dict[start_key][0]]
+        rymin,rxmin,rymax,rxmax = boxes[tagsPos[start_key][0]]
         yrand = random.random()*(rymax-rymin)*0.02
         xrand = random.random()*(rxmax-rxmin)*0.02
         if action[u'StartOffset']:
@@ -509,7 +557,7 @@ class Decisionor:
         #find click end point where first EndTag[...] match
         end_key = ''
         for key in action[u'EndTag']:
-            if pos_dict.has_key(key):
+            if tagsPos.has_key(key):
                 end_key = key
                 break
         if not end_key:
@@ -521,7 +569,7 @@ class Decisionor:
             #x = end_key.x + end_key.len_x/2 * rxoffset
             #y = end_key.y + end_key.len_y/2 * ryoffset
             #end point offset default is equal to start offset
-            rymin,rxmin,rymax,rxmax = boxes[pos_dict[end_key][0]]
+            rymin,rxmin,rymax,rxmax = boxes[tagsPos[end_key][0]]
             yrand = random.random()*(rymax-rymin)*0.01
             xrand = random.random()*(rxmax-rxmin)*0.01
             if action[u'EndOffset']:
@@ -589,9 +637,49 @@ class Decisionor:
         assert f<=t, 'Format err:%s'%(fromto)
         return [f,t]
 
+    def imgDetect(self, book):
+        gDevice = self.gDevice
+        tagsDetail = {}
+        #store the detected tags summerized info
+        tagsCount = {}
+        #store the detected object index position in tagsDetail
+        tagsPos = {}
+        self.getDelta("Before Call getNumpyData")
+        err, image_size, img_np = gDevice.getNumpyData()
+        self.logger.debug('DETECT: getNumpyData used:%s seconds, image size:%s'\
+                        %(self.getDelta(),image_size))
+        if err:
+            self.logger.warn('DETECT: getNumpyData failed,error:%s'%(err))
+            return tagsDetail, tagsCount, tagsPos, err
+        self.getDelta("Before Call detection")
+        (image_np, tag_boxes, tag_scores, tag_classes, tag_num) = book['Detector'].detect(img_np)
+        self.logger.debug('DETECT: inference name:%s, detect used:%s seconds'\
+                            %(book['InferenceName'], self.getDelta()))
+        tagsDetail = {'image_size':image_size, \
+                'tag_boxes':tag_boxes, \
+                'tag_scores':tag_scores, \
+                'tag_classes':tag_classes,\
+                'tag_num':tag_num}
+        for label_name in book['label2id_map']:
+            tagsPos[label_name] = []
+        #box should have minimun 60% possibility
+        min_score_thresh = .8
+        for i in range(tag_num):
+            if(tag_scores[i]<min_score_thresh): 
+                break 
+            tagsPos[book['id2label_map'][tag_classes[i]]].append(i)
+
+        for name in tagsPos:
+            if tagsPos[name]:
+                tagsCount[name] = {'scores':[],'boxes':[]}
+                for pos in tagsPos[name]:
+                    tagsCount[name]['scores'].append(tag_scores[pos])
+                    tagsCount[name]['boxes'].append(tag_boxes[pos])
+        self.logger.debug('DETECT: found tags:%s'%(tagsCount.keys()))
+        self.logger.debug('DETECT: tags info:%s'%(tagsCount))
+        return tagsDetail, tagsCount, tagsPos, err
 
     def decision_loop(self, bookname=u'Index'): 
-        gDevice = self.gDevice
         gBooks = self.gBooks
         jobUpdated = False
         if not bookname in gBooks:
@@ -599,47 +687,17 @@ class Decisionor:
             return jobUpdated
         book = gBooks[bookname]
         while True:
+#        for bunit in book['Sequence']:
             self.logger.info('===============START ACTION: Loop inside book: %s============'%(bookname))
-            self.getDelta("Before Call getNumpyData")
-            err, image_size, img_np = gDevice.getNumpyData()
-            self.logger.debug('DETECT: getNumpyData used:%s seconds, image size:%s'\
-                            %(self.getDelta(),image_size))
+
+            tagsDetail, tagsCount, tagsPos, err = self.imgDetect(book)
             if err:
-                self.logger.warn('getNumpyData failed, \
+                self.logger.warn('DETECT: imgDetect failed, \
                                   sleep 5s, error:%s'%(err))
                 time.sleep(5)
                 continue
-            self.getDelta("Before Call detection")
-            (image_np, tag_boxes, tag_scores, tag_classes, tag_num) = book['Detector'].detect(img_np)
-            self.logger.debug('Book:%s, detect used:%s seconds'%(bookname, self.getDelta()))
-            tags = {'image_size':image_size, \
-                    'tag_boxes':tag_boxes, \
-                    'tag_scores':tag_scores, \
-                    'tag_classes':tag_classes,\
-                    'tag_num':tag_num}
-            #store the detected object index position in tags
-            pos_dict = {}
-            for label_name in book['label2id_map']:
-                pos_dict[label_name] = []
-            #box should have minimun 60% possibility
-            min_score_thresh = .8
-            for i in range(tag_num):
-                if(tag_scores[i]<min_score_thresh): 
-                    break 
-                pos_dict[book['id2label_map'][tag_classes[i]]].append(i)
 
-            tagsFound = {}
-            for name in pos_dict:
-                if pos_dict[name]:
-                    tagsFound[name] = {'scores':[],'boxes':[]}
-                    for pos in pos_dict[name]:
-                        tagsFound[name]['scores'].append(tag_scores[pos])
-                        tagsFound[name]['boxes'].append(tag_boxes[pos])
-            
-            self.logger.debug('DETECT: found tags:%s'%(tagsFound.keys()))
-            self.logger.debug('DETECT: tags detail:%s'%(tagsFound))
-
-            if not tagsFound:
+            if not tagsCount:
                 self.logger.debug('DETECT: book:%s do not detect any tags'%(bookname))
                 #subbook will be terminated
                 if(bookname!=u'Index'):
@@ -648,7 +706,7 @@ class Decisionor:
                 time.sleep(1)
                 continue
 
-            jobUpdated = self.decision_do(tags, bookname, pos_dict)
+            jobUpdated = self.decision_do(tagsDetail, bookname, tagsPos)
             #subbook will be terminated if meet with incorrect decision
             #if(bookname!=u'Index' and jobUpdated==False):
             if(jobUpdated==True):
@@ -662,7 +720,8 @@ class Decisionor:
                 if(bookname!='Index'):
                     break
                 # It has been double checked 
-                elif(self.gBooks['Index']['JobClear'] >=1.0):
+                #elif(self.gBooks['Index']['JobClear'] >=1.0):
+                if self.jobIsAllClear():
                     break
             # Continue to next round.
             jobUpdated = False
