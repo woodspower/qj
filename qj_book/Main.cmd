@@ -49,7 +49,7 @@
                             "DecisionPeriod": 5000
                         },
                         {
-                            "PresetPeriod": 2000,
+                            "ReloadTime": 2000,
                             "Command": "Reload"
                         }
                     ]

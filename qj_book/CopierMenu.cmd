@@ -29,32 +29,16 @@
         },
         {
             "Name": "Go and do jobs in Copier Submenu",
-            "KeyBody": [
-                {
+            "KeyBody": {
                     "Name": "Goto Copier Submenu",
-                    "Conditions": [
-                        {
-                            "Name": "",
-                            "Allow": [
-                                {
-                                    "Name": "",
-                                    "Percent": 1.0,
-                                    "Tags": [
-                                        "CopierOn"
-                                    ]
-                                }
-                            ],
-                            "Disallow": []
-                        }
-                    ],
-                    "Actions": [
-                        {
+                    "Conditions": { 
+                            "Allow": { "Tags": [ "CopierOn" ] } 
+                        },
+                    "Actions": {
                             "Command": "Goto",
                             "BookName": "CopierSubmenu"
                         }
-                    ]
                 }
-            ]
         }
 ]
 }
