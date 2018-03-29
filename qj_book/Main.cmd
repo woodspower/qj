@@ -47,10 +47,6 @@
                         {
                             "Command": "Click",
                             "DecisionPeriod": 5000
-                        },
-                        {
-                            "ReloadTime": 2000,
-                            "Command": "Reload"
                         }
                     ]
                 }

@@ -95,7 +95,7 @@
                         },
                     "Actions": {
                             "Command": "Goto",
-                            "BookName": "CopierMenu"
+                            "BookName": "CopierSubmenu"
                         }
                 },
                 {
@@ -107,7 +107,7 @@
                                 {
                                     "Name": "",
                                     "Percent": 0.01,
-                                    "Tags": ["EnforceMenu", "CopierMenu", "ActorMenu", "WingMenu"]
+                                    "Tags": ["EnforceMenu", "ActorMenu", "WingMenu"]
                                 }
                             ],
                             "Disallow": []

@@ -9,6 +9,7 @@ import time
 import numpy as np
 import struct
 import subprocess
+import copy
 
 import sqlite3
 import pickle
@@ -18,10 +19,11 @@ from collections import OrderedDict
 
 from object_detection.utils import label_map_util
 
-from img_detection import Detector
+from detect import Detector
 from device import Device
 
 UNIT_NUM_OF_EACH_ACTIONS_MAX = 10
+CLICK_TIME_OF_SELECT_ACTION_MAX = 100
 
 class Decisionor:
     def __init__(self, device, bookPath):
@@ -166,8 +168,9 @@ class Decisionor:
         # Init default value
         tmpl = {
             "Name": "",
-            "ReloadTime": 0,
+            "PreloadTime": 0,
             "Command": "Goto",
+            "PostloadTime": 0,
             "DecisionPeriod": 0,
             "BookName": None
         }
@@ -185,8 +188,9 @@ class Decisionor:
         # Init default value
         tmpl = {
             "Name": "",
-            "ReloadTime": 0,
+            "PreloadTime": 0,
             "Command": "Click",
+            "PostloadTime": 2000,
             "DecisionPeriod": 0,
             "StartTag": [],
             "StartOffset": [0.5, 0.5],
@@ -227,16 +231,16 @@ class Decisionor:
         # Init default value
         tmpl = {
             "Name": "",
-            "ReloadTime": 0,
+            "PreloadTime": 0,
             "Command": "Select",
+            "SelectToArea": None,
+            "PostloadTime": 0,
             "DecisionPeriod": 5000,
-            "SubActions":[
-                {
-                    "Name":"Select one candidate task",
-                    "ReloadTime": 2000,
-                    "Command": "Click"
-                }
-            ],
+            "StartTag": [],
+            "StartOffset": [0.5, 0.5],
+            "EndTag": [],
+            "EndOffset": [0.5, 0.5],
+            "Duration": "20~50",
             "JudgeConditions": None
         }
         for key in tmpl:
@@ -247,26 +251,33 @@ class Decisionor:
             assert cunit[key] != None, \
                 "key:%s MUST set a value in Action body:%s"%(key,cunit)
         # Need do some special init .
-        # Unify the following field to list
-        if not isinstance(cunit['SubActions'], list):
-            cunit['SubActions'] = [cunit['SubActions']]
+        # reuse click action init most of params
+        self.init_book_keybody_action_click(cunit, kunit)
         if not isinstance(cunit['JudgeConditions'], list):
             cunit['JudgeConditions'] = [cunit['JudgeConditions']]
-        # action unit number should not more than MAX
-        num = len(cunit['SubActions'])
-        assert num <= UNIT_NUM_OF_EACH_ACTIONS_MAX, \
-            "SubActions unit number:%d MUST less than:%d in Action body:%s"\
-            %(num,UNIT_NUM_OF_EACH_ACTIONS_MAX,cunit)
-        # Set default value for cunit['SubActions']
-        for subunit in cunit['SubActions']:
-            cmd = subunit['Command']
-            if cmd == 'Click':
-                self.init_book_keybody_action_click(subunit, kunit)
-            elif cmd == 'Goto':
-                self.init_book_keybody_action_goto(subunit, kunit)
         for subunit in cunit['JudgeConditions']:
             self.init_book_keybody_condition(subunit, kunit)
+        if 'SubActions' in cunit:
+            # nested call init_actions
+            # Unify the following field to list
+            if not isinstance(cunit['SubActions'], list):
+                cunit['SubActions'] = [cunit['SubActions']]
+            self.init_book_keybody_actions(kunit, cunit['SubActions'])
 
+    def init_book_keybody_actions(self, kunit, actions):
+        # action unit number should not more than MAX
+        num = len(actions)
+        assert num <= UNIT_NUM_OF_EACH_ACTIONS_MAX, \
+            "Actions unit number:%d MUST less than:%d in Action body:%s"\
+            %(num,UNIT_NUM_OF_EACH_ACTIONS_MAX,kunit)
+        for cunit in actions:
+            cmd = cunit['Command']
+            if cmd == 'Click':
+                self.init_book_keybody_action_click(cunit, kunit)
+            elif cmd == 'Goto':
+                self.init_book_keybody_action_goto(cunit, kunit)
+            elif cmd == 'Select':
+                self.init_book_keybody_action_select(cunit, kunit)
 
     # Check valid of the diction , initial default value
     # Format is as:
@@ -287,19 +298,7 @@ class Decisionor:
         # Unify the following field to list
         if not isinstance(kunit['Actions'], list):
             kunit['Actions'] = [kunit['Actions']]
-        # action unit number should not more than MAX
-        num = len(kunit['Actions'])
-        assert num <= UNIT_NUM_OF_EACH_ACTIONS_MAX, \
-            "Actions unit number:%d MUST less than:%d in Action body:%s"\
-            %(num,UNIT_NUM_OF_EACH_ACTIONS_MAX,kunit)
-        for cunit in kunit[u'Actions']:
-            cmd = cunit['Command']
-            if cmd == 'Click':
-                self.init_book_keybody_action_click(cunit, kunit)
-            elif cmd == 'Goto':
-                self.init_book_keybody_action_goto(cunit, kunit)
-            elif cmd == 'Select':
-                self.init_book_keybody_action_select(cunit, kunit)
+        self.init_book_keybody_actions(kunit, kunit['Actions'])
 
     # Check valid of the source book diction , initial default value
     # Format is as:
@@ -387,94 +386,97 @@ class Decisionor:
             book['JobClear'] = 0.0
             self.gBooks[bookname] = book
 
+    def check_conditions(self, bookname, conditions, tagsDetail, tagsFound):
+        # Check conditions is ok or not.
+        book = self.gBooks[bookname]
+        self.logger.debug('Check condition in book:[%s], conditions:[%s]'\
+                    %(bookname, conditions))
+        disallow_result = False
+        allow_result = False
+        job_forbid = False
+        for cond in conditions:
+            if disallow_result:
+                break
+            if job_forbid:
+                break
+            tagsNew = self.tagsAdjustByArea(tagsFound, cond['FocusArea'])
+            for job in cond['Jobs']:
+                if job_forbid:
+                    break
+                if not eval(str(book['JobClear']) + job['ClearedExpr']):
+                    job_forbid = True
+                    break
+            for disallow in cond[u'Disallow']:
+                if disallow_result:
+                    break
+                for tag in disallow[u'Tags']:
+                    # Need check how long will triger disallow condition
+                    # Set timelast and Seconds key in disallow
+                    if not u'Seconds' in disallow:
+                        # How many seconds will triger
+                        disallow[u'Seconds'] = 0
+                    if not 'timelast' in disallow:
+                        # Last time checked, it is a time.time() float
+                        disallow['timelast'] = 0.0
+                    if not tag in tagsNew:
+                        # clear the timecount
+                        disallow['timelast'] = 0.0
+                        continue
+                    # found disallowed tag
+                    # check how long will triger disallow condition
+                    if disallow[u'Seconds'] != 0:
+                        if disallow['timelast'] == 0.0:
+                            # start to record time and count
+                            disallow['timelast'] = time.time()
+                            continue
+                        timenow = time.time()
+                        delta = timenow - disallow['timelast']
+                        if delta <= disallow[u'Seconds']:
+                            continue
+                    disallow_result = True
+                    self.logger.debug('Not satisfied by tag disallow:%s'%(tag))
+                    break
+            # Check allow condition before check disallow
+            # otherwise some disallow condition will always happen
+            for allow in cond[u'Allow']:
+                if allow_result:
+                    break
+                allow_num_req = int(len(allow[u'Tags'])*allow[u'Percent'])
+                if allow_num_req == 0:
+                    # At least one tag should be found
+                    allow_num_req = 1
+                allow_num = 0
+                taglist = []
+                for tag in allow[u'Tags']:
+                    if tag in tagsNew:
+                        allow_num += 1
+                        taglist.append(tag)
+                self.logger.debug('tag require:%d/100 of %s'%(100*allow[u'Percent'], allow[u'Tags']))
+                self.logger.debug('tag detect: %s'%(str(taglist)))
+                if(allow_num >= allow_num_req):
+                    allow_result = True
+                    break
+        if job_forbid or disallow_result or not allow_result:
+            self.logger.debug('Condition is not ready, job_forbid:%s, \
+                               disallow_result:%s, allow_result:%s'\
+                               %(job_forbid,disallow_result,allow_result))
+            return False
+        # conditions is ok
+        self.logger.debug('Conditions is ready...')
+        return True
             
     
     def decision_do(self, tagsDetail, bookname, tagsFound):
         jobUpdated = False
-
-        image_size = tagsDetail['image_size']
-        boxes = tagsDetail['tag_boxes']
-        scores = tagsDetail['tag_scores']
-        classes = tagsDetail['tag_classes']
-        num = tagsDetail['tag_num']
-
         book = self.gBooks[bookname]
-
-        # Loop the book
-        self.logger.debug('Loop the book')
         # record the bunit which need to adjust sequence
         for bunit in book['Sequence']:
             kunit2move = {}
             for kunit in bunit['KeyBody']:
-                # Check conditions is ok or not.
-                self.logger.debug('Check condition [%s][%s][%s]'\
+                # Loop the book keybody
+                self.logger.debug('Loop the book:%s, sequence:%s, keybody:%s'\
                             %(bookname, bunit[u'Name'],kunit[u'Name']))
-                disallow_result = False
-                allow_result = False
-                job_forbid = False
-                for cond in kunit[u'Conditions']:
-                    if disallow_result:
-                        break
-                    if job_forbid:
-                        break
-                    tagsNew = self.tagsAdjustByArea(tagsFound, cond['FocusArea'])
-                    for job in cond['Jobs']:
-                        if job_forbid:
-                            break
-                        if not eval(str(book['JobClear']) + job['ClearedExpr']):
-                            job_forbid = True
-                            break
-                    for disallow in cond[u'Disallow']:
-                        if disallow_result:
-                            break
-                        for tag in disallow[u'Tags']:
-                            # Need check how long will triger disallow condition
-                            # Set timelast and Seconds key in disallow
-                            if not u'Seconds' in disallow:
-                                # How many seconds will triger
-                                disallow[u'Seconds'] = 0
-                            if not 'timelast' in disallow:
-                                # Last time checked, it is a time.time() float
-                                disallow['timelast'] = 0.0
-                            if not tag in tagsNew:
-                                # clear the timecount
-                                disallow['timelast'] = 0.0
-                                continue
-                            # found disallowed tag
-                            # check how long will triger disallow condition
-                            if disallow[u'Seconds'] != 0:
-                                if disallow['timelast'] == 0.0:
-                                    # start to record time and count
-                                    disallow['timelast'] = time.time()
-                                    continue
-                                timenow = time.time()
-                                delta = timenow - disallow['timelast']
-                                if delta <= disallow[u'Seconds']:
-                                    continue
-                            disallow_result = True
-                            self.logger.debug('Not satisfied by tag disallow:%s'%(tag))
-                            break
-                    # Check allow condition before check disallow
-                    # otherwise some disallow condition will always happen
-                    for allow in cond[u'Allow']:
-                        if allow_result:
-                            break
-                        allow_num_req = int(len(allow[u'Tags'])*allow[u'Percent'])
-                        if allow_num_req == 0:
-                            # At least one tag should be found
-                            allow_num_req = 1
-                        allow_num = 0
-                        taglist = []
-                        for tag in allow[u'Tags']:
-                            if tag in tagsNew:
-                                allow_num += 1
-                                taglist.append(tag)
-                        self.logger.debug('tag require:%d/100 of %s'%(100*allow[u'Percent'], allow[u'Tags']))
-                        self.logger.debug('tag detect: %s'%(str(taglist)))
-                        if(allow_num >= allow_num_req):
-                            allow_result = True
-                            break
-                if job_forbid or disallow_result or not allow_result:
+                if not self.check_conditions(bookname, kunit['Conditions'], tagsDetail, tagsFound):
                     # adjust priority of the current condition unit, put it to end of list
                     # it is very dangours to change multiple list member at same time
                     # so i just change one at one time
@@ -482,8 +484,7 @@ class Decisionor:
                         kunit2move = kunit
                     continue
                 # kunit condition is ok, do the action.
-                self.logger.debug('Condition is ready...')
-                jobUpdated = self.do_action(bookname, bunit, kunit, tagsDetail, tagsFound)
+                jobUpdated = self.do_actions(bookname, kunit['Actions'], tagsDetail, tagsFound)
                 if jobUpdated:
                     # Only one of the first real actived condition in KeyBody list will be executed
                     break
@@ -496,19 +497,75 @@ class Decisionor:
                 bunit['KeyBody'].remove(kunit2move)
                 bunit['KeyBody'].append(kunit2move)
                 kunit2move = {}
-
         return jobUpdated
             
+    # do one action
+    # NOTE: this function can be nested called when subactions inside action
+    def do_action(self, bookname, action, tagsDetail, tagsFound, idx=0):
+        jobUpdated = False
+        self.logger.debug('entering action: %s'%(str(action)))
+        # check whether need to preload the data
+        if action['PreloadTime'] != 0:
+            print 'pre reload', action['PreloadTime']
+            time.sleep(action['PreloadTime']/1000)
+            newDetail, newFound, err = self.imgDetect(self.gBooks[bookname])
+            if not newFound:
+                self.logger.debug('DETECT: reload img of book:%s do not detect any tags'%(bookname))
+                # this should not happen
+                tagsDetail = {}
+                tagsFound = {}
+            #NOTE: python need replace key one by one, otherwise the new value 
+            # will lost when out of this function scope
+            for key in newDetail: tagsDetail[key] = newDetail[key]
+            for key in newFound: tagsFound[key] = newFound[key]
+        if action[u'Command'] == u'Click':
+            temp = self.do_action_click(bookname, action, tagsDetail, tagsFound, idx)
+            if temp == True:
+                jobUpdated = True
+        elif action[u'Command'] == u'Goto':
+            temp = self.do_action_goto(bookname, action, tagsDetail, tagsFound)
+            if temp == True:
+                jobUpdated = True
+        elif action[u'Command'] == u'Select':
+            temp = self.do_action_select(bookname, action, tagsDetail, tagsFound)
+            if temp == True:
+                jobUpdated = True
+        else:
+            self.logger.info('DO ACTION:%s, PARAM:this action is tbd..., BODY:%s'\
+                            %(action['Command'],str(action)))
+        # Nested call 'SubActions'
+        if 'SubActions' in action:
+            subActions = action['SubActions']
+            self.logger.debug('entering subActions: %s'%(subActions))
+            for subAction in subActions:
+                # Any one of subaction can change status of jobUpdated
+                temp = self.do_action(bookname, subAction, tagsDetail, tagsFound)
+                if temp == True:
+                    jobUpdated = True
+        # check whether need to postload the data
+        if action['PostloadTime'] != 0:
+            print 'post reload', action['PostloadTime']
+            time.sleep(action['PostloadTime']/1000)
+            newDetail, newFound, err = self.imgDetect(self.gBooks[bookname])
+            if not newFound:
+                self.logger.debug('DETECT: reload img of book:%s do not detect any tags'%(bookname))
+                # this should not happen
+                tagsDetail = {}
+                tagsFound = {}
+            #NOTE: python need replace key one by one, otherwise the new value 
+            # will lost when out of this function scope
+            for key in newDetail: tagsDetail[key] = newDetail[key]
+            for key in newFound: tagsFound[key] = newFound[key]
+        return jobUpdated
 
-    def do_action(self, bookname, bunit, kunit, tagsDetail, tagsFound):
+    def do_actions(self, bookname, actions, tagsDetail, tagsFound):
         gLastActions = self.gLastActions
         jobUpdated = False
-        actions = kunit[u'Actions']
         num = len(actions)
+        self.logger.debug('entering actions: %s'%(actions))
         for idx in range(num):
             action = actions[idx]
             current_time = time.time()
-            self.logger.debug('entering action: %s'%(str(action)))
             # check whether action is too frequce
             if len(gLastActions) > idx:
                 if gLastActions[idx] and gLastActions[idx]['Action'] == action:
@@ -519,72 +576,124 @@ class Decisionor:
                             delta:%f < decision period:%f'%(delta, decision_period))
                         jobUpdated = True
                         continue
-            # check whether need to reload the data
-            if action['ReloadTime'] != 0:
-                print 'reload', action['ReloadTime']
-                time.sleep(action['ReloadTime']/1000)
-                tagsDetail, tagsFound, err = self.imgDetect(self.gBooks[bookname])
-                if not tagsFound:
-                    self.logger.debug('DETECT: reload img of book:%s do not detect any tags'%(bookname))
-                    # this should not happen, need recheck
-                    return True
-            if action[u'Command'] == u'Click':
-                temp = self.do_action_click(bookname, actions, idx, tagsDetail, tagsFound)
-                if temp == True:
-                    jobUpdated = True
-            elif action[u'Command'] == u'Goto':
-                temp = self.do_action_goto(bookname, actions, idx, tagsDetail, tagsFound)
-                if temp == True:
-                    jobUpdated = True
-            elif action[u'Command'] == u'Select':
-                temp = self.do_action_select(bookname, actions, idx, tagsDetail, tagsFound)
-                if temp == True:
-                    jobUpdated = True
-            else:
-                self.logger.info('DO ACTION:%s, PARAM:this action is tbd..., BODY:%s'\
-                                %(action['Command'],str(action)))
-                continue
+            # update last action record
+            gLastActions[idx] = { 'CurrentBook':bookname,
+                                  'Time' : time.time(),
+                                  'Action': action,
+                                  'Command':action['Command']
+                                }
+            # call one action from actions list
+            # Any one of action can change jobUpdated to true
+            temp = self.do_action(bookname, action, tagsDetail, tagsFound)
+            if temp == True:
+                jobUpdated = True
         return jobUpdated
             
-    def do_action_goto(self, current_book, actions, idx, tagsDetail, tagsFound):
-        gLastActions = self.gLastActions
+    def do_action_goto(self, current_book, action, tagsDetail, tagsFound):
         jobUpdated = False
         # Nested call decision_loop('GotoBook')
         # If the 'GotoBook' find nothing, will come back to UpperBook.
-        action = actions[idx]
         target_book = action[u'BookName']
-        gLastActions[idx] = { 'CurrentBook':current_book, \
-                                'Time' : time.time(), \
-                                'Action': action, \
-                                'Command':action['Command'],\
-                                'Params': { 'target_book':target_book }
-                                }
         param = 'From book:%s goto book:%s'%(current_book, target_book)
         self.logger.info('DO ACTION:Goto, PARAM:%s, BODY:%s'\
-                        %(param, gLastActions[idx]))
+                        %(param, action))
         jobUpdated = self.decision_loop(target_book)
         param = 'End Loop inside book: %s, back to:%s'%(target_book, current_book)
         self.logger.info('DO ACTION:GoBack, PARAM:%s'%(param))
         return jobUpdated
 
-    def do_action_select(self, current_book, actions, idx, tagsDetail, tagsFound):
-        gLastActions = self.gLastActions
-        # Always need to updated if click ready
-        jobUpdated = True
-        action = actions[idx]
-        im_width, im_height = tagsDetail['image_size']
-        boxes = tagsDetail['tag_boxes']
-        scores = tagsDetail['tag_scores']
-        classes = tagsDetail['tag_classes']
-        num = tagsDetail['tag_num']
-        tagsAdjustByArea
+    def do_action_select(self, bookname, action, tagsDetail, tagsFound):
+        jobUpdated = False
+        leftestChecked = False
+        # action['Select'] will re-use Click action function
+        #NOTE: PreloadTime MUST be 0 before call Click action
+        # Otherwise pre-sorted tagsDetail/tagsFound will be overwrited.
+        cliAction = copy.deepcopy(action)
+        cliAction['Command'] = 'Click'
+        cliAction['PreloadTime'] = 0
+        for i in range(CLICK_TIME_OF_SELECT_ACTION_MAX):
+            # sort tagsFound according to SelectToArea
+            # do_action will change tagsFound at each call
+            # default sorting method will be: 
+            # current --> leftest-->righter-->righter-->...->rightest
+            # e.g. there are tags which has following center x=(x2-x1)/2
+            #      tags = {a:[0.4], b:[0.45], c:[0.5], d:[0.55], e:[0.6]}
+            #      c will be selcted to check, since SelectToArea = [0.4, 0.6]
+            #      a will be next since it is leftest
+            #      after round1: {a:[0.5], b:[0.55], c:[0.6], d:[0.65], e:[0.7]}
+            #      b will be next since it is righter
+            #      after round2: {a:[0.45], b:[0.5], c:[0.55], d:[0.6], e:[0.65]}
+            #      c will be next since it is righter
+            #      after round3: {a:[0.4], b:[0.45], c:[0.5], d:[0.55], e:[0.6]}
+            #      d will be next since it is righter
+            #      after round4: {a:[0.35], b:[0.4], c:[0.45], d:[0.5], e:[0.55]}
+            #      e will be next and last since it is rightest
+            # Check JudgeConditions
+            judgeConditions = action['JudgeConditions']
+            self.logger.debug('check JudgeConditions: %s'%(judgeConditions))
+            jobUpdated = self.check_conditions(bookname, judgeConditions, tagsDetail, tagsFound)
+            if jobUpdated:
+                param = 'Found a satisfied tag'
+                self.logger.info('DO ACTION:Select, PARAM:%s, BODY:%s'\
+                                %(param, action))
+                return jobUpdated
+            # Go and find next one to be selected
+            area = action['SelectToArea']
+            weight = {}
+            startPos = -1
+            labelName = action['StartTag'][0]
+            if labelName not in tagsFound:
+                self.logger.debug('can not find any label:%s from tag:%s inside area:%s'%(labelName, tag, area))
+                break
+            tag = tagsFound[labelName]
+            # Find the start position
+            for box in tag['boxes']:
+                i = tag['boxes'].index(box)
+                weight[i] = sum(box)
+                if self.boxInsideArea(box, area):
+                    self.logger.debug('find label:%s in tag[%d]:%s inside area:%s'%(labelName, i, tag, area))
+                    startPos = i
+            if startPos <0:
+                self.logger.debug('can not find any label:%s from tag:%s inside area:%s'%(labelName, tag, area))
+                break
+            # sort tags from left to right
+            sorted_weight = sorted(weight, key=weight.get)
+            # get sorted position of startPos
+            startPosIdx = sorted_weight.index(startPos)
+            # do we need go leftest first
+            if leftestChecked == False:
+                # check if startPos itself is the leftest
+                if startPosIdx == 0:
+                    # yes, it is the leftest, the next will be just righter one
+                    nextPosIdx = startPosIdx + 1
+                    # go righter from now on
+                    leftestChecked = True
+                else:
+                    # no, use the leftest as the next
+                    nextPosIdx = 0
+            else:
+                # find the righter one as the next
+                nextPosIdx = startPosIdx + 1
+            if nextPosIdx >= len(sorted_weight):
+                # All tag are seleted once
+                break
+            nextPos = sorted_weight[nextPosIdx]
+            param = 'Click times:%d, startPos:%d, nextPos:%d, tag:%s'\
+                    %(i, startPos, nextPos, tag)
+            self.logger.info('DO ACTION:Select PARAM:%s, BODY:%s'\
+                             %(param, action))
+            self.do_action(bookname, cliAction, tagsDetail, tagsFound, nextPos)
+        param = 'Click times:%d exceed MAX:%s, or all tags are slected but not found'\
+                %(i, CLICK_TIME_OF_SELECT_ACTION_MAX)
+        self.logger.info('CANCEL ACTION:Select PARAM:%s, BODY:%s'\
+                         %(param, action))
+        return False
 
 
-    def do_action_click(self, current_book, actions, idx, tagsDetail, tagsFound):
-        gLastActions = self.gLastActions
+
+    def do_action_click(self, current_book, action, tagsDetail, tagsFound, idx=0):
         # Always need to updated if click ready
         jobUpdated = True
-        action = actions[idx]
         im_width, im_height = tagsDetail['image_size']
 
         #find click start point where first StartTag[...] match
@@ -605,7 +714,7 @@ class Decisionor:
         #default offset is (1/2, 1/2) in the center of box
         #all the unit start with 'r' means relative distance
         rxoffset, ryoffset = 0.5, 0.5
-        rymin,rxmin,rymax,rxmax = tagFound[start_key]['boxes'][0]
+        rymin,rxmin,rymax,rxmax = tagsFound[start_key]['boxes'][idx]
         yrand = random.random()*(rymax-rymin)*0.02
         xrand = random.random()*(rxmax-rxmin)*0.02
         if action[u'StartOffset']:
@@ -643,7 +752,7 @@ class Decisionor:
             #x = end_key.x + end_key.len_x/2 * rxoffset
             #y = end_key.y + end_key.len_y/2 * ryoffset
             #end point offset default is equal to start offset
-            rymin,rxmin,rymax,rxmax = tagsFound[end_key]['boxes'][0]
+            rymin,rxmin,rymax,rxmax = tagsFound[end_key]['boxes'][idx]
             yrand = random.random()*(rymax-rymin)*0.01
             xrand = random.random()*(rxmax-rxmin)*0.01
             if action[u'EndOffset']:
@@ -672,14 +781,8 @@ class Decisionor:
             duration_range = [10, 50]
         duration = random.randint(duration_range[0], duration_range[1])
         self.gDevice.swipe(xstart, ystart, xend, yend, duration)
-        gLastActions[idx] = { 'CurrentBook':current_book, \
-                                'Time' : time.time(), \
-                                'Action': action, \
-                                'Command':action['Command'],\
-                                'Params': { 'start_key':start_key,'xstart':xstart,'ystart':ystart,\
-                                            'end_key':end_key,'xend':xend,'yend':yend,'duration':duration}
-                                }
-        param = str(gLastActions[idx])
+        param = {'start_key':start_key,'xstart':xstart,'ystart':ystart,\
+                 'end_key':end_key,'xend':xend,'yend':yend,'duration':duration}
         self.logger.info('DO ACTION:Click, PARAM:%s, BODY:%s'\
                         %(param, str(action)))
         return jobUpdated
@@ -740,11 +843,12 @@ class Decisionor:
         (image_np, tag_boxes, tag_scores, tag_classes, tag_num) = book['Detector'].detect(img_np)
         self.logger.debug('DETECT: inference name:%s, detect used:%s seconds'\
                             %(book['InferenceName'], self.getDelta()))
-        tagsDetail = {'image_size':image_size, \
-                'tag_boxes':tag_boxes, \
-                'tag_scores':tag_scores, \
-                'tag_classes':tag_classes,\
-                'tag_num':tag_num}
+        tagsDetail = {'image_size':image_size,
+                      'image_np':image_np,
+                      'tag_boxes':tag_boxes,
+                      'tag_scores':tag_scores,
+                      'tag_classes':tag_classes,
+                      'tag_num':tag_num}
         #box should have minimun 80% possibility
         min_score_thresh = .8
         for i in range(tag_num):
@@ -769,7 +873,6 @@ class Decisionor:
             return jobUpdated
         book = self.gBooks[bookname]
         while True:
-#        for bunit in book['Sequence']:
             self.logger.info('===============START ACTION: Loop inside book: %s============'%(bookname))
 
             tagsDetail, tagsFound, err = self.imgDetect(book)
