@@ -21,6 +21,7 @@ from object_detection.utils import label_map_util
 
 from detect import Detector
 from device import Device
+import imdiff
 
 UNIT_NUM_OF_EACH_ACTIONS_MAX = 10
 CLICK_TIME_OF_SELECT_ACTION_MAX = 100
@@ -611,6 +612,11 @@ class Decisionor:
         cliAction = copy.deepcopy(action)
         cliAction['Command'] = 'Click'
         cliAction['PreloadTime'] = 0
+        # Compare latest N image, if they are all similar, quit.
+        N = 5
+        SIMILAR = 20.0
+        simiTimes = 0
+        imLast = None
         for i in range(CLICK_TIME_OF_SELECT_ACTION_MAX):
             # sort tagsFound according to SelectToArea
             # do_action will change tagsFound at each call
@@ -637,6 +643,21 @@ class Decisionor:
                 self.logger.info('DO ACTION:Select, PARAM:%s, BODY:%s'\
                                 %(param, action))
                 return jobUpdated
+            # Check whether new image is same as last N images
+            if imLast:
+                im = tagsDetail['image_np']
+                diff = imdiff.diffByHistogram(im, imLast, tagsDetail['image_size'])
+                if diff <= SIMILAR:
+                    self.logger.debug('click get %d similar image, diff: %f'%(simiTimes, diff))
+                    simiTimes = simiTimes+1
+                else:
+                    simiTimes = 0
+            if simiTimes >= N:
+                param = 'Click times:%d get %d similar image'%(i, simiTimes)
+                self.logger.info('CANCEL ACTION:Select PARAM:%s, BODY:%s'\
+                                 %(param, action))
+                return False
+            imLast = tagsDetail['image_np']
             # Go and find next one to be selected
             area = action['SelectToArea']
             weight = {}
