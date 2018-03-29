@@ -44,7 +44,7 @@ class Device:
         return ipList
 
     # return errcode, image_size, image_np
-    # image_np is a numpy array of image data which is defined by img_detection.py
+    # image_np is a numpy array of image data which is defined by detect.py
     # Data format should be shape of [H, W, 3], 
     # The first dimension is pixel of each Heigh point,
     # The second dimension is pixel of each Width point,
