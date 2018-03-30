@@ -191,7 +191,7 @@ class Decisionor:
             "Name": "",
             "PreloadTime": 0,
             "Command": "Click",
-            "PostloadTime": 2000,
+            "PostloadTime": 0,
             "DecisionPeriod": 0,
             "StartTag": [],
             "StartOffset": [0.5, 0.5],
@@ -226,17 +226,17 @@ class Decisionor:
         if not isinstance(cunit['EndOffset'], list):
             cunit['EndOffset'] = [cunit['EndOffset']]
             
-    # Check valid of the aciton_select diction , init default value
+    # Check valid of the aciton_find diction , init default value
     # Format is as tmpl.
-    def init_book_keybody_action_select(self, cunit, kunit):
+    def init_book_keybody_action_find(self, cunit, kunit):
         # Init default value
         tmpl = {
             "Name": "",
             "PreloadTime": 0,
-            "Command": "Select",
+            "Command": "Find",
             "SelectToArea": None,
-            "PostloadTime": 0,
-            "DecisionPeriod": 5000,
+            "PostloadTime": 1000,
+            "DecisionPeriod": 0,
             "StartTag": [],
             "StartOffset": [0.5, 0.5],
             "EndTag": [],
@@ -277,8 +277,8 @@ class Decisionor:
                 self.init_book_keybody_action_click(cunit, kunit)
             elif cmd == 'Goto':
                 self.init_book_keybody_action_goto(cunit, kunit)
-            elif cmd == 'Select':
-                self.init_book_keybody_action_select(cunit, kunit)
+            elif cmd == 'Find':
+                self.init_book_keybody_action_find(cunit, kunit)
 
     # Check valid of the diction , initial default value
     # Format is as:
@@ -400,11 +400,22 @@ class Decisionor:
                 break
             if job_forbid:
                 break
+            # if Job of current book is cleared, return direct
+            if book['JobClear'] >= 1.0:
+                job_forbid = True
+                break
             tagsNew = self.tagsAdjustByArea(tagsFound, cond['FocusArea'])
+            # check Job status of other book if required
             for job in cond['Jobs']:
                 if job_forbid:
                     break
-                if not eval(str(book['JobClear']) + job['ClearedExpr']):
+                if not job['Bookname'] in self.gBooks:
+                    self.logger.debug('Book not found when check job condition \
+                                       of other book:[%s] in book:[%s], conditions:[%s]'\
+                                       %(job['Bookname'], bookname, conditions))
+                    continue
+                jBook = self.gBooks[job['Bookname']]
+                if not eval(str(jBook['JobClear']) + job['ClearedExpr']):
                     job_forbid = True
                     break
             for disallow in cond[u'Disallow']:
@@ -467,6 +478,13 @@ class Decisionor:
         return True
             
     
+    # There are three level of excution unit list.
+    # Sequence unit list, KeyBody unit list, Action unit list
+    # Sequence units will excuted one by one without any condition
+    # KeyBody units will excuted ONLY first succeed unit and break
+    # KeyBody unit of first non-succeed unit will be adjust to the end
+    # Action units will excuted one by one until met a failed unit
+    # Action units will excuted ONLY if keybody condition is satified
     def decision_do(self, tagsDetail, bookname, tagsFound):
         jobUpdated = False
         book = self.gBooks[bookname]
@@ -527,22 +545,20 @@ class Decisionor:
             temp = self.do_action_goto(bookname, action, tagsDetail, tagsFound)
             if temp == True:
                 jobUpdated = True
-        elif action[u'Command'] == u'Select':
-            temp = self.do_action_select(bookname, action, tagsDetail, tagsFound)
+        elif action[u'Command'] == u'Find':
+            temp = self.do_action_find(bookname, action, tagsDetail, tagsFound)
             if temp == True:
                 jobUpdated = True
         else:
             self.logger.info('DO ACTION:%s, PARAM:this action is tbd..., BODY:%s'\
                             %(action['Command'],str(action)))
-        # Nested call 'SubActions'
-        if 'SubActions' in action:
+        # Nested call 'SubActions' if 'Actions' success
+        if jobUpdated and 'SubActions' in action:
             subActions = action['SubActions']
             self.logger.debug('entering subActions: %s'%(subActions))
             for subAction in subActions:
-                # Any one of subaction can change status of jobUpdated
-                temp = self.do_action(bookname, subAction, tagsDetail, tagsFound)
-                if temp == True:
-                    jobUpdated = True
+                # subaction can not change status of jobUpdated
+                self.do_action(bookname, subAction, tagsDetail, tagsFound)
         # check whether need to postload the data
         if action['PostloadTime'] != 0:
             print 'post reload', action['PostloadTime']
@@ -575,8 +591,7 @@ class Decisionor:
                     if(delta < decision_period):
                         self.logger.debug('delay this action since \
                             delta:%f < decision period:%f'%(delta, decision_period))
-                        jobUpdated = True
-                        continue
+                        time.sleep((decision_period-delta)/1000)
             # update last action record
             gLastActions[idx] = { 'CurrentBook':bookname,
                                   'Time' : time.time(),
@@ -586,8 +601,12 @@ class Decisionor:
             # call one action from actions list
             # Any one of action can change jobUpdated to true
             temp = self.do_action(bookname, action, tagsDetail, tagsFound)
+            # Action units will excuted one by one until met a failed unit
+            # Action units will excuted ONLY if keybody condition is satified
             if temp == True:
                 jobUpdated = True
+            else:
+                break
         return jobUpdated
             
     def do_action_goto(self, current_book, action, tagsDetail, tagsFound):
@@ -603,10 +622,10 @@ class Decisionor:
         self.logger.info('DO ACTION:GoBack, PARAM:%s'%(param))
         return jobUpdated
 
-    def do_action_select(self, bookname, action, tagsDetail, tagsFound):
+    def do_action_find(self, bookname, action, tagsDetail, tagsFound):
         jobUpdated = False
         leftestChecked = False
-        # action['Select'] will re-use Click action function
+        # action['Find'] will re-use Click action function
         #NOTE: PreloadTime MUST be 0 before call Click action
         # Otherwise pre-sorted tagsDetail/tagsFound will be overwrited.
         cliAction = copy.deepcopy(action)
@@ -616,7 +635,7 @@ class Decisionor:
         N = 5
         SIMILAR = 20.0
         simiTimes = 0
-        imLast = None
+        imLast = np.array([])
         for i in range(CLICK_TIME_OF_SELECT_ACTION_MAX):
             # sort tagsFound according to SelectToArea
             # do_action will change tagsFound at each call
@@ -640,7 +659,7 @@ class Decisionor:
             jobUpdated = self.check_conditions(bookname, judgeConditions, tagsDetail, tagsFound)
             if jobUpdated:
                 param = 'Found a satisfied tag'
-                self.logger.info('DO ACTION:Select, PARAM:%s, BODY:%s'\
+                self.logger.info('DO ACTION:Find, PARAM:%s, BODY:%s'\
                                 %(param, action))
                 return jobUpdated
             # Check whether new image is same as last N images
@@ -654,7 +673,7 @@ class Decisionor:
                     simiTimes = 0
             if simiTimes >= N:
                 param = 'Click times:%d get %d similar image'%(i, simiTimes)
-                self.logger.info('CANCEL ACTION:Select PARAM:%s, BODY:%s'\
+                self.logger.info('CANCEL ACTION:Find PARAM:%s, BODY:%s'\
                                  %(param, action))
                 return False
             imLast = tagsDetail['image_np']
@@ -701,12 +720,12 @@ class Decisionor:
             nextPos = sorted_weight[nextPosIdx]
             param = 'Click times:%d, startPos:%d, nextPos:%d, tag:%s'\
                     %(i, startPos, nextPos, tag)
-            self.logger.info('DO ACTION:Select PARAM:%s, BODY:%s'\
+            self.logger.info('DO ACTION:Find PARAM:%s, BODY:%s'\
                              %(param, action))
             self.do_action(bookname, cliAction, tagsDetail, tagsFound, nextPos)
         param = 'Click times:%d exceed MAX:%s, or all tags are slected but not found'\
                 %(i, CLICK_TIME_OF_SELECT_ACTION_MAX)
-        self.logger.info('CANCEL ACTION:Select PARAM:%s, BODY:%s'\
+        self.logger.info('CANCEL ACTION:Find PARAM:%s, BODY:%s'\
                          %(param, action))
         return False
 
@@ -918,11 +937,11 @@ class Decisionor:
                 #job updated
                 self.jobReset()
             else:
-                self.jobClear(bookname)
-                self.logger.debug('DETECT: book:%s do not satify any condition,wrong book or job clear:[%f].'\
-                                %(bookname, self.gBooks[bookname]['JobClear']))
                 # switching between books need double check, so Index book cannot break directly
                 if(bookname!='Index'):
+                    self.jobClear(bookname)
+                    self.logger.debug('DETECT: book:%s do not satify any condition,wrong book or job clear:[%f].'\
+                                    %(bookname, self.gBooks[bookname]['JobClear']))
                     break
                 # It has been double checked 
                 if self.jobIsAllClear():

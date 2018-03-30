@@ -12,18 +12,7 @@
                             "Jobs": {"Bookname": "CopierSubmenu"},
                             "Allow": {"Tags": ["CopierOff"]}
                     },
-                    "Actions": [
-                        {
-                            "Command": "Click",
-                            "DecisionPeriod": 5000,
-                            "StartTag": ["CopierOff"]
-                        },
-                        {
-                            "Name": "Reload image",
-                            "Command": "Reload",
-                            "PresetPeriod": 2000
-                        }
-                    ]
+                    "Actions": { "Command": "Click" }
                 }
             ]
         },
