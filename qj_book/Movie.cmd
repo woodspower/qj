@@ -1,7 +1,5 @@
 {
     "InferenceName": "Movie",
-    "InferenceFile":"/home/leo/qj/object_detection/data/Movie/inference_ssd/frozen_inference_graph.pb",
-    "LabelMapFile":"/home/leo/qj/object_detection/data/Movie/pascal_label_map.pbtxt",
     "Sequence": [
         {
             "Name": "One of Confirm->dNext->Cancel->Reject",

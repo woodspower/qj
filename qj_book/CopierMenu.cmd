@@ -1,7 +1,5 @@
 {
     "InferenceName": "CopierMenu",
-    "InferenceFile": "/home/leo/qj/object_detection/data/CopierMenu/inference_ssd/frozen_inference_graph.pb",
-    "LabelMapFile": "/home/leo/qj/object_detection/data/CopierMenu/pascal_label_map.pbtxt",
     "Sequence": [
         {
             "Name": "Select one submenu in Copier menu",

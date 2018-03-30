@@ -32,9 +32,11 @@ class Decisionor:
         self.gLastActions = [None]*UNIT_NUM_OF_EACH_ACTIONS_MAX
         self.gDevice = device
         self.gBooks = {}
+        self.gDetectors = {}
         self.logger = logging.getLogger('decision-%s'%(device.ip))
         self.logger.setLevel(logging.DEBUG)
-        self.load_cmdbook(bookPath)
+        self.loadInfModels(bookPath)
+        self.loadCmdBook(bookPath)
 
     def jobClear(self, bookname):
         job = self.gBooks[bookname]
@@ -331,61 +333,124 @@ class Decisionor:
             for kunit in bunit[u'KeyBody']:
                 self.init_book_keybody(kunit)
         
+    def loadInfModels(self, path):
+        # Find inf files and init inferecne models
+        # Inf files may has constant path string:
+        # "Index": {
+        #     "InferenceFile": "/data/Index/inference_ssd/frozen_inference_graph.pb",
+        #     "LabelMapFile": "/data/Index/pascal_label_map.pbtxt"
+        # }
+        # or may has variable path string:
+        # "Main": {
+        #     "InferencePath": "/data",
+        #     "InferenceFile": "$InferencePath/$InferenceName/inference_ssd/frozen_inference_graph.pb",
+        #     "LabelMapFile": "$InferencePath/$InferenceName/pascal_label_map.pbtxt"
+        # }
+        # $InferenceName is the key of json body, other variable is definable
+        infFiles = []
+        for root, dirnames, filenames in os.walk(path):
+            for filename in fnmatch.filter(filenames, '*.inf'):
+                infFiles.append(os.path.join(root, filename))
+        # init inference files one by one
+        for fname in infFiles:
+            self.logger.info('LOADING inference models: %s'%(fname))
+            fin = open(fname, 'r')
+            datas = json.load(fin)
+            fin.close()
+            # each key in json dict will be the inference name
+            for infName in datas:
+                d = datas[infName]
+                assert infName not in self.gDetectors, \
+                    "inference %s in file:%s is duplicated"%(infName,fname)
+                # substitute $VAR with proper string
+                d['InferenceName'] = infName
+                infFile = self.strSubstitute(d['InferenceFile'], d)
+                mapFile = self.strSubstitute(d['LabelMapFile'],d)
+                self.logger.info('model file: %s, map file: %s'%(infFile, mapFile))
+                # load label map
+                label2id_map = label_map_util.get_label_map_dict(mapFile)
+                id2label_map = {}
+                for key in label2id_map.keys():
+                    val = label2id_map[key]
+                    id2label_map[val] = key
+                self.gDetectors[infName] = {}
+                detector = self.gDetectors[infName]
+                detector['InferenceName'] = infName
+                detector['Label2ID'] = label2id_map
+                detector['ID2Label'] = id2label_map
+                detector['InferenceFile'] = infFile
+                detector['LabelMapFile'] = mapFile
+                # create a detector
+                detectorName = self.gDevice.ip+'-'+infName
+                detector['Detector'] = Detector(detectorName, infFile, mapFile)
 
-    def load_cmdbook(self, bookpath):
+    # substitute $VAR with proper string
+    # here assume string is a path sting
+    # s is the string may include $VAR
+    # d is the dict include VAR value
+    # e.g. s = '$ROOT/$NAME/test'
+    #      d = { 'ROOT':'/data',
+    #            'NAME':'leo'}
+    #      return:'/data/leo/test'
+    def strSubstitute(self, s, d):
+        # split elements in path string
+        elements = s.split('/')
+        if elements[0] == '':
+            # path is start with '/'
+            out = ['/']
+        else:
+            out = []
+        for e in elements:
+            if not '$' in e:
+                out.append(e)
+            else:
+                out.append(eval("d['"+e.strip('$')+"']"))
+        return reduce(lambda x,y:os.path.join(x,y),out)
+
+    def loadCmdBook(self, bookpath):
         # Find cmd files and bcmd files
         # cmd file has own inferecne model
         # bcmd(branch cmd) file will reuse cmd modle
         # cmd file need be loaded before bcmd
+        # Index.cmd file must exist
+        indexfile = ''
         cmdfiles = []
         for root, dirnames, filenames in os.walk(bookpath):
             for filename in fnmatch.filter(filenames, '*.cmd'):
-                cmdfiles.append(os.path.join(root, filename))
-        bcmdfiles = []
-        for root, dirnames, filenames in os.walk(bookpath):
-            for filename in fnmatch.filter(filenames, '*.bcmd'):
-                bcmdfiles.append(os.path.join(root, filename))
-    
-        # load cmd/bcmd files
-        # cmd file need be loaded before bcmd
-        for fname in cmdfiles+bcmdfiles:
+                if filename == 'Index.cmd':
+                    indexfile = os.path.join(root, filename)
+                else:
+                    cmdfiles.append(os.path.join(root, filename))
+        # load cmd files
+        # indexfile must be the first one, it has default value
+        assert indexfile, \
+            "Index.cmd not found, which must be provided in %s"%(bookpath)
+        for fname in [indexfile]+cmdfiles:
             self.logger.info('LOADING book: %s'%(fname))
             fin = open(fname, 'r')
             d = json.load(fin, object_pairs_hook=OrderedDict)
             #d = json.load(fin)
             fin.close()
-            infname = d['InferenceName']
             bookname = os.path.basename(fname).split('.')[0].strip()
             assert bookname not in self.gBooks, \
                 "book %s in file:%s is duplicated"%(bookname,fname)
-
-            book = {}
-            book['InferenceName'] = d['InferenceName']
+            self.gBooks[bookname] = {}
+            book = self.gBooks[bookname]
             book['Name'] = bookname
-            if infname in self.gBooks:
-                self.logger.debug("book %s in file:%s using existing inference:%s"%(bookname,fname,infname))
-                book['Label2ID'] = self.gBooks[infname]['Label2ID']
-                book['ID2Label'] = self.gBooks[infname]['ID2Label']
-                book['Detector'] = self.gBooks[infname]['Detector']
-
+            book['InferenceName'] = d['InferenceName']
+            if bookname != book['InferenceName']:
+                self.logger.debug("book %s in file:%s using others inference:%s"\
+                                  %(bookname,fname,book['InferenceName']))
+            # Index.cmd must provide default Popup inference file
+            # which is used to detect general popup things
+            if 'PopupInferenceName' in d:
+                book['PopupInferenceName'] = d['PopupInferenceName']
             else:
-                # load label map
-                label2id_map = label_map_util.get_label_map_dict(d['LabelMapFile'])
-                id2label_map = {}
-                for key in label2id_map.keys():
-                    val = label2id_map[key]
-                    id2label_map[val] = key
-                book['Label2ID'] = label2id_map
-                book['ID2Label'] = id2label_map
-                # load a detector
-                detectorName = self.gDevice.ip+'-'+bookname
-                book['Detector'] = Detector(detectorName, d['InferenceFile'], d['LabelMapFile'])
-
+                book['PopupInferenceName'] = self.gBooks['Index']['PopupInferenceName']
             self.init_book(d)
             book['Sequence'] = d['Sequence']
             # How much jobs already done in this book
             book['JobClear'] = 0.0
-            self.gBooks[bookname] = book
 
     def check_conditions(self, bookname, conditions, tagsDetail, tagsFound):
         # Check conditions is ok or not.
@@ -523,11 +588,12 @@ class Decisionor:
     def do_action(self, bookname, action, tagsDetail, tagsFound, idx=0):
         jobUpdated = False
         self.logger.debug('entering action: %s'%(str(action)))
+        book = self.gBooks[bookname]
         # check whether need to preload the data
         if action['PreloadTime'] != 0:
             print 'pre reload', action['PreloadTime']
             time.sleep(action['PreloadTime']/1000)
-            newDetail, newFound, err = self.imgDetect(self.gBooks[bookname])
+            newDetail, newFound, err = self.imgDetect(self.gDetectors[book['InferenceName']])
             if not newFound:
                 self.logger.debug('DETECT: reload img of book:%s do not detect any tags'%(bookname))
                 # this should not happen
@@ -563,7 +629,7 @@ class Decisionor:
         if action['PostloadTime'] != 0:
             print 'post reload', action['PostloadTime']
             time.sleep(action['PostloadTime']/1000)
-            newDetail, newFound, err = self.imgDetect(self.gBooks[bookname])
+            newDetail, newFound, err = self.imgDetect(self.gDetectors[book['InferenceName']])
             if not newFound:
                 self.logger.debug('DETECT: reload img of book:%s do not detect any tags'%(bookname))
                 # this should not happen
@@ -868,7 +934,7 @@ class Decisionor:
         return tagsNew
 
 
-    def imgDetect(self, book):
+    def imgDetect(self, detector):
         tagsDetail = {}
         #store the detected tags summerized info
         tagsFound = {}
@@ -880,9 +946,9 @@ class Decisionor:
             self.logger.warn('DETECT: getNumpyData failed,error:%s'%(err))
             return tagsDetail, tagsFound, err
         self.getDelta("Before Call detection")
-        (image_np, tag_boxes, tag_scores, tag_classes, tag_num) = book['Detector'].detect(img_np)
+        (image_np, tag_boxes, tag_scores, tag_classes, tag_num) = detector['Detector'].detect(img_np)
         self.logger.debug('DETECT: inference name:%s, detect used:%s seconds'\
-                            %(book['InferenceName'], self.getDelta()))
+                            %(detector['InferenceName'], self.getDelta()))
         tagsDetail = {'image_size':image_size,
                       'image_np':image_np,
                       'tag_boxes':tag_boxes,
@@ -892,7 +958,7 @@ class Decisionor:
         #box should have minimun 80% possibility
         min_score_thresh = .8
         for i in range(tag_num):
-            labelName = book['ID2Label'][tag_classes[i]]
+            labelName = detector['ID2Label'][tag_classes[i]]
             if(tag_scores[i]<min_score_thresh): 
                 break 
             if not labelName in tagsFound:
@@ -915,7 +981,7 @@ class Decisionor:
         while True:
             self.logger.info('===============START ACTION: Loop inside book: %s============'%(bookname))
 
-            tagsDetail, tagsFound, err = self.imgDetect(book)
+            tagsDetail, tagsFound, err = self.imgDetect(self.gDetectors[book['InferenceName']])
             if err:
                 self.logger.warn('DETECT: imgDetect failed, \
                                   sleep 5s, error:%s'%(err))

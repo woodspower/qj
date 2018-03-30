@@ -1,7 +1,6 @@
 {
     "InferenceName": "Index",
-    "InferenceFile":"/home/leo/qj/object_detection/data/Index/inference_ssd/frozen_inference_graph.pb",
-    "LabelMapFile":"/home/leo/qj/object_detection/data/Index/pascal_label_map.pbtxt",
+    "PopupInferenceName": "Popup",
     "Sequence": [
         {
             "Name": "Go to one of following GUI",

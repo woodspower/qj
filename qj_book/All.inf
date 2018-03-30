@@ -1,0 +1,21 @@
+{
+    "Index": {
+        "InferenceFile": "/home/leo/qj/object_detection/data/Index/inference_ssd/frozen_inference_graph.pb",
+        "LabelMapFile": "/home/leo/qj/object_detection/data/Index/pascal_label_map.pbtxt"
+    },
+    "Main": {
+        "InferencePath": "/home/leo/qj/object_detection/data",
+        "InferenceFile": "$InferencePath/$InferenceName/inference_ssd/frozen_inference_graph.pb",
+        "LabelMapFile": "$InferencePath/$InferenceName/pascal_label_map.pbtxt"
+    },
+    "Movie": {
+        "InferencePath": "/home/leo/qj/object_detection/data",
+        "InferenceFile": "$InferencePath/$InferenceName/inference_ssd/frozen_inference_graph.pb",
+        "LabelMapFile": "$InferencePath/$InferenceName/pascal_label_map.pbtxt"
+    },
+    "CopierMenu": {
+        "InferencePath": "/home/leo/qj/object_detection/data",
+        "InferenceFile": "$InferencePath/$InferenceName/inference_ssd/frozen_inference_graph.pb",
+        "LabelMapFile": "$InferencePath/$InferenceName/pascal_label_map.pbtxt"
+    }
+}

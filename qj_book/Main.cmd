@@ -1,7 +1,5 @@
 {
     "InferenceName": "Main",
-    "InferenceFile": "/home/leo/qj/object_detection/data/Main/inference_ssd/frozen_inference_graph.pb",
-    "LabelMapFile": "/home/leo/qj/object_detection/data/Main/pascal_label_map.pbtxt",
     "Sequence": [
         {
             "Name": "Do Task, choose one of the following",
