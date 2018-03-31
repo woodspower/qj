@@ -23,15 +23,15 @@ from detect import Detector
 from device import Device
 import imdiff
 
-
 class Decisionor:
     def __init__(self, device, bookPath):
         self.gStartTime = time.time()
         self.gDevice = device
         self.gBooks = {}
         self.gDetectors = {}
-        self.ACTIONS_OF_EACH_UNIT_MAX = 10
-        self.SELECT_ACTION_MAX_CLICK_TIME = 100
+        self.ACTION_NUM_OF_SINGLE_LIST_MAX = 10
+        self.RELOAD_TIME_IN_ACTION_LIST_DEFAULT = 1000
+        self.SELECT_MAX_CLICK_NUM = 100
         # Compare latest self.DEAD_LOOP_NUM_SIMILAR_IMAGE image, if they are all similar, quit.
         self.DEAD_LOOP_NUM_SIMILAR_IMAGE = 29
         # How much diff of two images will trade as same
@@ -41,7 +41,7 @@ class Decisionor:
         # Last image numpy data
         self.gLastImage = np.array([])
         # Record every last action in the actions list
-        self.gLastActions = [None]*self.ACTIONS_OF_EACH_UNIT_MAX
+        self.gLastActions = [None]*self.ACTION_NUM_OF_SINGLE_LIST_MAX
         # call each init function
         self.logger = logging.getLogger('decision-%s'%(device.ip))
         self.logger.setLevel(logging.DEBUG)
@@ -284,9 +284,9 @@ class Decisionor:
     def init_book_keybody_actions(self, kunit, actions):
         # action unit number should not more than MAX
         num = len(actions)
-        assert num <= self.ACTIONS_OF_EACH_UNIT_MAX, \
+        assert num <= self.ACTION_NUM_OF_SINGLE_LIST_MAX, \
             "Actions unit number:%d MUST less than:%d in Action body:%s"\
-            %(num,self.ACTIONS_OF_EACH_UNIT_MAX,kunit)
+            %(num,self.ACTION_NUM_OF_SINGLE_LIST_MAX,kunit)
         for cunit in actions:
             cmd = cunit['Command']
             if cmd == 'Click':
@@ -629,7 +629,10 @@ class Decisionor:
             
     # do one action
     # NOTE: this function can be nested called when subactions inside action
-    def do_action(self, bookname, action, tagsDetail, tagsFound, idx=0):
+    # param idx is the tag index when multiple tags are exist
+    # param isLast means whether this action is the last one of actions list
+    # isLast is used to do auto reload between action inside actions list
+    def do_action(self, bookname, action, tagsDetail, tagsFound, idx=0, isLast=True):
         jobUpdated = False
         self.logger.debug('entering action: %s'%(str(action)))
         book = self.gBooks[bookname]
@@ -637,7 +640,7 @@ class Decisionor:
         if action['PreloadTime'] != 0:
             self.logger.debug('DETECT: Pre-reload img of book:%s, delay time:%s ms'\
                                %(bookname, action['PreloadTime']))
-            time.sleep(action['PreloadTime']/1000)
+            time.sleep(action['PreloadTime']/1000.0)
             newDetail, newFound, err = self.imgDetect(self.gDetectors[book['InferenceName']])
             if not newFound:
                 self.logger.debug('DETECT: reload img of book:%s do not detect any tags'%(bookname))
@@ -683,15 +686,24 @@ class Decisionor:
         # nested call 'SubActions' if 'Actions' success
         if jobUpdated and 'SubActions' in action:
             subActions = action['SubActions']
+            num = len(subActions)
+            i = 0
             self.logger.debug('entering subActions: %s'%(subActions))
             for subAction in subActions:
+                i = i+1
                 # subaction can not change status of jobUpdated
-                self.do_action(bookname, subAction, tagsDetail, tagsFound)
+                self.do_action(bookname, subAction, tagsDetail, tagsFound, isLast=(i==num))
         # check whether need to postload the data
-        if action['PostloadTime'] != 0:
+        # isLast is used to do auto reload between action inside actions list
+        # Only the last action would not trigle auto reloadTrue
+        reloadTime = action['PostloadTime']
+        if reloadTime==0 and not isLast:
+            # Force reload between action inside same actions list
+            reloadTime = self.RELOAD_TIME_IN_ACTION_LIST_DEFAULT
+        if reloadTime != 0:
             self.logger.debug('DETECT: Post-reload img of book:%s, delay time:%s ms'\
-                               %(bookname, action['PostloadTime']))
-            time.sleep(action['PostloadTime']/1000)
+                               %(bookname, reloadTime))
+            time.sleep(reloadTime/1000.0)
             newDetail, newFound, err = self.imgDetect(self.gDetectors[book['InferenceName']])
             if not newFound:
                 self.logger.debug('DETECT: reload img of book:%s do not detect any tags'%(bookname))
@@ -720,7 +732,7 @@ class Decisionor:
                     if(delta < decision_period):
                         self.logger.debug('delay this action since \
                             delta:%f < decision period:%f'%(delta, decision_period))
-                        time.sleep((decision_period-delta)/1000)
+                        time.sleep((decision_period-delta)/1000.0)
             # update last action record
             gLastActions[idx] = { 'CurrentBook':bookname,
                                   'Time' : time.time(),
@@ -729,7 +741,7 @@ class Decisionor:
                                 }
             # call one action from actions list
             # Any one of action can change jobUpdated to true
-            temp = self.do_action(bookname, action, tagsDetail, tagsFound)
+            temp = self.do_action(bookname, action, tagsDetail, tagsFound, isLast=(idx==num-1))
             # Action units will excuted one by one following unit.StopOnFail
             # StopOnFail=='Yes' by default, then:
             # Action units will excuted one by one until met a failed unit
@@ -765,7 +777,7 @@ class Decisionor:
         cliAction['PreloadTime'] = 0
         # FocusArea will use SELECT its own
         cliAction['FocusArea'] = [0.,0.,1.,1.]
-        for i in range(self.SELECT_ACTION_MAX_CLICK_TIME):
+        for i in range(self.SELECT_MAX_CLICK_NUM):
             # sort tagsFound according to FocusArea
             # do_action will change tagsFound at each call
             # default sorting method will be: 
@@ -842,9 +854,10 @@ class Decisionor:
                     %(i, startPos, nextPos, tag)
             self.logger.info('DO ACTION:Find PARAM:%s, BODY:%s'\
                              %(param, action))
-            self.do_action(bookname, cliAction, tagsDetail, tagsFound, nextPos)
+            # force the isLast==False, this will force reload after each action
+            self.do_action(bookname, cliAction, tagsDetail, tagsFound, nextPos, isLast=False)
         param = 'Click times:%d exceed MAX:%s, or all tags are slected but not found'\
-                %(i, self.SELECT_ACTION_MAX_CLICK_TIME)
+                %(i, self.SELECT_MAX_CLICK_NUM)
         self.logger.info('CANCEL ACTION:Find PARAM:%s, BODY:%s'\
                          %(param, action))
         return False

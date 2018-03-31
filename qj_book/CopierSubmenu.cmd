@@ -11,11 +11,9 @@
                         "Name":"A1: Find a task",
                         "Command": "Find",
                         "FocusArea": [0.4, 0, 0.6, 1],
-                        "PostloadTime": 1000,
                         "SubActions": {
                                 "Name":"Quit task selected mode before judge",
                                 "Command": "Click",
-                                "PostloadTime": 1000,
                                 "StartOffset": [ 0, -0.5 ]
                             },
                         "JudgeConditions":{
