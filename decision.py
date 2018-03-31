@@ -23,16 +23,26 @@ from detect import Detector
 from device import Device
 import imdiff
 
-UNIT_NUM_OF_EACH_ACTIONS_MAX = 10
-CLICK_TIME_OF_SELECT_ACTION_MAX = 100
 
 class Decisionor:
     def __init__(self, device, bookPath):
         self.gStartTime = time.time()
-        self.gLastActions = [None]*UNIT_NUM_OF_EACH_ACTIONS_MAX
         self.gDevice = device
         self.gBooks = {}
         self.gDetectors = {}
+        self.ACTIONS_OF_EACH_UNIT_MAX = 10
+        self.SELECT_ACTION_MAX_CLICK_TIME = 100
+        # Compare latest self.DEAD_LOOP_NUM_SIMILAR_IMAGE image, if they are all similar, quit.
+        self.DEAD_LOOP_NUM_SIMILAR_IMAGE = 9
+        # How much diff of two images will trade as same
+        self.DEAD_LOOP_COST_SIMILAR_IMAGE = 20.0
+        # How many continous time have been checked
+        self.gSimilarTimes = 0
+        # Last image numpy data
+        self.gLastImage = np.array([])
+        # Record every last action in the actions list
+        self.gLastActions = [None]*self.ACTIONS_OF_EACH_UNIT_MAX
+        # call each init function
         self.logger = logging.getLogger('decision-%s'%(device.ip))
         self.logger.setLevel(logging.DEBUG)
         self.loadInfModels(bookPath)
@@ -199,7 +209,8 @@ class Decisionor:
             "StartOffset": [0.5, 0.5],
             "EndTag": [],
             "EndOffset": [0.5, 0.5],
-            "Duration": "20~50"
+            "Duration": "20~50",
+            "FocusArea":[0.,0.,1.,1.]
         }
         for key in tmpl:
             # Set default value for cunit
@@ -236,7 +247,7 @@ class Decisionor:
             "Name": "",
             "PreloadTime": 0,
             "Command": "Find",
-            "SelectToArea": None,
+            "FocusArea": None,
             "PostloadTime": 1000,
             "DecisionPeriod": 0,
             "StartTag": [],
@@ -270,9 +281,9 @@ class Decisionor:
     def init_book_keybody_actions(self, kunit, actions):
         # action unit number should not more than MAX
         num = len(actions)
-        assert num <= UNIT_NUM_OF_EACH_ACTIONS_MAX, \
+        assert num <= self.ACTIONS_OF_EACH_UNIT_MAX, \
             "Actions unit number:%d MUST less than:%d in Action body:%s"\
-            %(num,UNIT_NUM_OF_EACH_ACTIONS_MAX,kunit)
+            %(num,self.ACTIONS_OF_EACH_UNIT_MAX,kunit)
         for cunit in actions:
             cmd = cunit['Command']
             if cmd == 'Click':
@@ -452,6 +463,24 @@ class Decisionor:
             # How much jobs already done in this book
             book['JobClear'] = 0.0
 
+    def checkDeadLoop(self, tagsDetail):
+        # Compare latest self.DEAD_LOOP_NUM_SIMILAR_IMAGE image, if they are all similar, quit.
+        if self.gLastImage.any():
+            im = tagsDetail['image_np']
+            diff = imdiff.diffByHistogram(im, self.gLastImage, tagsDetail['image_size'])
+            if diff <= self.DEAD_LOOP_COST_SIMILAR_IMAGE:
+                self.gSimilarTimes = self.gSimilarTimes+1
+                self.logger.debug('Found %d times similar image,latest diff: %f > %f'\
+                                %(self.gSimilarTimes, diff, self.DEAD_LOOP_COST_SIMILAR_IMAGE))
+            else:
+                self.gSimilarTimes = 0
+        if self.gSimilarTimes >= self.DEAD_LOOP_NUM_SIMILAR_IMAGE:
+            self.logger.debug('Found %d times similar image,exceed: %d'\
+                            %(self.gSimilarTimes, self.DEAD_LOOP_NUM_SIMILAR_IMAGE))
+            return False
+        self.gLastImage = tagsDetail['image_np']
+        return True
+
     def check_conditions(self, bookname, conditions, tagsDetail, tagsFound):
         # Check conditions is ok or not.
         book = self.gBooks[bookname]
@@ -533,14 +562,16 @@ class Decisionor:
                 if(allow_num >= allow_num_req):
                     allow_result = True
                     break
+        # check wether system is deadloop
+        deadLoop = self.checkDeadLoop(tagsDetail)
         if job_forbid or disallow_result or not allow_result:
             self.logger.debug('Condition is not ready, job_forbid:%s, \
                                disallow_result:%s, allow_result:%s'\
                                %(job_forbid,disallow_result,allow_result))
-            return False
+            return False, deadLoop
         # conditions is ok
         self.logger.debug('Conditions is ready...')
-        return True
+        return True, deadLoop
             
     
     # There are three level of excution unit list.
@@ -560,7 +591,14 @@ class Decisionor:
                 # Loop the book keybody
                 self.logger.debug('Loop the book:%s, sequence:%s, keybody:%s'\
                             %(bookname, bunit[u'Name'],kunit[u'Name']))
-                if not self.check_conditions(bookname, kunit['Conditions'], tagsDetail, tagsFound):
+                condStatus, deadLoop = self.check_conditions(bookname, kunit['Conditions'], tagsDetail, tagsFound)
+                if deadLoop:
+                    self.logger.warn('DEAD ACTION: Dead Loop book:%s, conditions:%s, \
+                                      tagsFound:%s, tagsDetail:%s, conditionStatus:%s'\
+                        %(bookname, kunit['Conditions'], tagsFound, tagsDetail, condStatus))
+                    # Dead loop, try froce update everything
+                    return True
+                if not condStatus:
                     # adjust priority of the current condition unit, put it to end of list
                     # it is very dangours to change multiple list member at same time
                     # so i just change one at one time
@@ -697,19 +735,16 @@ class Decisionor:
         cliAction = copy.deepcopy(action)
         cliAction['Command'] = 'Click'
         cliAction['PreloadTime'] = 0
-        # Compare latest N image, if they are all similar, quit.
-        N = 5
-        SIMILAR = 20.0
-        simiTimes = 0
-        imLast = np.array([])
-        for i in range(CLICK_TIME_OF_SELECT_ACTION_MAX):
-            # sort tagsFound according to SelectToArea
+        # FocusArea will use SELECT its own
+        cliAction['FocusArea'] = [0.,0.,1.,1.]
+        for i in range(self.SELECT_ACTION_MAX_CLICK_TIME):
+            # sort tagsFound according to FocusArea
             # do_action will change tagsFound at each call
             # default sorting method will be: 
             # current --> leftest-->righter-->righter-->...->rightest
             # e.g. there are tags which has following center x=(x2-x1)/2
             #      tags = {a:[0.4], b:[0.45], c:[0.5], d:[0.55], e:[0.6]}
-            #      c will be selcted to check, since SelectToArea = [0.4, 0.6]
+            #      c will be selcted to check, since FocusArea = [0.4, 0.6]
             #      a will be next since it is leftest
             #      after round1: {a:[0.5], b:[0.55], c:[0.6], d:[0.65], e:[0.7]}
             #      b will be next since it is righter
@@ -722,29 +757,20 @@ class Decisionor:
             # Check JudgeConditions
             judgeConditions = action['JudgeConditions']
             self.logger.debug('check JudgeConditions: %s'%(judgeConditions))
-            jobUpdated = self.check_conditions(bookname, judgeConditions, tagsDetail, tagsFound)
+            condStatus, deadLoop  = self.check_conditions(bookname, judgeConditions, tagsDetail, tagsFound)
+            if deadLoop:
+                self.logger.warn('DEAD ACTION: (SELECT)Dead Loop in book:%s, judgeConditions:%s, \
+                                  tagsFound:%s, tagsDetail:%s, conditionStatus:%s'\
+                    %(bookname, judgeConditions, tagsFound, tagsDetail, condStatus))
+                # Dead loop, try froce update everything
+                return True
             if jobUpdated:
                 param = 'Found a satisfied tag'
                 self.logger.info('DO ACTION:Find, PARAM:%s, BODY:%s'\
                                 %(param, action))
                 return jobUpdated
-            # Check whether new image is same as last N images
-            if imLast:
-                im = tagsDetail['image_np']
-                diff = imdiff.diffByHistogram(im, imLast, tagsDetail['image_size'])
-                if diff <= SIMILAR:
-                    self.logger.debug('click get %d similar image, diff: %f'%(simiTimes, diff))
-                    simiTimes = simiTimes+1
-                else:
-                    simiTimes = 0
-            if simiTimes >= N:
-                param = 'Click times:%d get %d similar image'%(i, simiTimes)
-                self.logger.info('CANCEL ACTION:Find PARAM:%s, BODY:%s'\
-                                 %(param, action))
-                return False
-            imLast = tagsDetail['image_np']
             # Go and find next one to be selected
-            area = action['SelectToArea']
+            area = action['FocusArea']
             weight = {}
             startPos = -1
             labelName = action['StartTag'][0]
@@ -790,7 +816,7 @@ class Decisionor:
                              %(param, action))
             self.do_action(bookname, cliAction, tagsDetail, tagsFound, nextPos)
         param = 'Click times:%d exceed MAX:%s, or all tags are slected but not found'\
-                %(i, CLICK_TIME_OF_SELECT_ACTION_MAX)
+                %(i, self.SELECT_ACTION_MAX_CLICK_TIME)
         self.logger.info('CANCEL ACTION:Find PARAM:%s, BODY:%s'\
                          %(param, action))
         return False
@@ -801,11 +827,12 @@ class Decisionor:
         # Always need to updated if click ready
         jobUpdated = True
         im_width, im_height = tagsDetail['image_size']
+        tagsNew = self.tagsAdjustByArea(tagsFound, action['FocusArea'])
 
         #find click start point where first StartTag[...] match
         start_key = ''
         for key in action[u'StartTag']:
-            if key in tagsFound:
+            if key in tagsNew:
                 start_key = key
                 break
         if not start_key:
@@ -820,7 +847,7 @@ class Decisionor:
         #default offset is (1/2, 1/2) in the center of box
         #all the unit start with 'r' means relative distance
         rxoffset, ryoffset = 0.5, 0.5
-        rymin,rxmin,rymax,rxmax = tagsFound[start_key]['boxes'][idx]
+        rymin,rxmin,rymax,rxmax = tagsNew[start_key]['boxes'][idx]
         yrand = random.random()*(rymax-rymin)*0.02
         xrand = random.random()*(rxmax-rxmin)*0.02
         if action[u'StartOffset']:
@@ -846,7 +873,7 @@ class Decisionor:
         #find click end point where first EndTag[...] match
         end_key = ''
         for key in action[u'EndTag']:
-            if key in tagsFound:
+            if key in tagsNew:
                 end_key = key
                 break
         if not end_key:
@@ -858,7 +885,7 @@ class Decisionor:
             #x = end_key.x + end_key.len_x/2 * rxoffset
             #y = end_key.y + end_key.len_y/2 * ryoffset
             #end point offset default is equal to start offset
-            rymin,rxmin,rymax,rxmax = tagsFound[end_key]['boxes'][idx]
+            rymin,rxmin,rymax,rxmax = tagsNew[end_key]['boxes'][idx]
             yrand = random.random()*(rymax-rymin)*0.01
             xrand = random.random()*(rxmax-rxmin)*0.01
             if action[u'EndOffset']:
@@ -919,6 +946,9 @@ class Decisionor:
         
 
     def tagsAdjustByArea(self, tagsFound, area):
+        # if area is full size, do not need do anything
+        if not area or area==[0.,0.,1.,1.]:
+            return tagsFound
         tagsNew = {}
         for labelName in tagsFound:
             tag = tagsFound[labelName]
@@ -931,6 +961,8 @@ class Decisionor:
                     tagsNew[labelName]['poses'].append(tag['poses'][i])
                     tagsNew[labelName]['scores'].append(tag['scores'][i])
                     tagsNew[labelName]['boxes'].append(tag['boxes'][i])
+        self.logger.debug('DETECT: Adjust tags from:%s to:%s by area:%s'\
+                        %(tagsFound, tagsNew, area))
         return tagsNew
 
 

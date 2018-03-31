@@ -10,7 +10,7 @@
                     {
                         "Name":"A1: Find a task",
                         "Command": "Find",
-                        "SelectToArea": [0.4, 0, 0.6, 1],
+                        "FocusArea": [0.4, 0, 0.6, 1],
                         "PostloadTime": 1000,
                         "SubActions": {
                                 "Name":"Quit task selected mode before judge",
@@ -27,7 +27,7 @@
                         "Name":"A2: Select the task",
                         "Command": "Click",
                         "PostloadTime": 1000,
-                        "SelectToArea": [0.4, 0, 0.6, 1]
+                        "FocusArea": [0.4, 0, 0.6, 1]
                     },
                     {
                         "Name":"A3: Start the task",
