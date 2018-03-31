@@ -1,33 +1,30 @@
 {
     "InferenceName": "CopierMenu",
-    "Sequence": [
-        {
-            "Name": "Select one submenu in Copier menu",
-            "KeyBody": [
-                {
-                    "Name": "Select Copier Submenu",
-                    "Conditions": {
-                            "Jobs": {"Bookname": "CopierSubmenu"},
-                            "Allow": {"Tags": ["CopierOff"]}
+    "Sequence": {
+        "Name": "Goto one of submenu from Copier/DailyCopier/MonsterTower",
+        "KeyBody": [
+            {
+                "Name": "Check Copier Submenu",
+                "Conditions": {
+                        "Jobs": {"Bookname": "CopierSubmenu"},
+                        "Allow": {"Tags": ["CopierOff", "CopierOn"]}
+                },
+                "Actions": [
+                    {   
+                        "Name": "Turn CopierOff to CopierOn",
+                        "Command": "Click",
+                        "StartTag": "CopierOff",
+                        "StopOnFail": "No" 
                     },
-                    "Actions": { "Command": "Click" }
-                }
-            ]
-        },
-        {
-            "Name": "Go and do jobs in Copier Submenu",
-            "KeyBody": {
-                    "Name": "Goto Copier Submenu",
-                    "Conditions": { 
-                            "Allow": { "Tags": [ "CopierOn" ] } 
-                        },
-                    "Actions": {
-                            "Command": "Goto",
-                            "BookName": "CopierSubmenu"
-                        }
-                }
-        }
-    ]
+                    {
+                        "Command": "Goto",
+                        "StartTag": "CopierOn",
+                        "BookName": "CopierSubmenu" 
+                    }
+                ]
+            }
+        ]
+    }
 }
 
 

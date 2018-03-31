@@ -33,7 +33,7 @@ class Decisionor:
         self.ACTIONS_OF_EACH_UNIT_MAX = 10
         self.SELECT_ACTION_MAX_CLICK_TIME = 100
         # Compare latest self.DEAD_LOOP_NUM_SIMILAR_IMAGE image, if they are all similar, quit.
-        self.DEAD_LOOP_NUM_SIMILAR_IMAGE = 9
+        self.DEAD_LOOP_NUM_SIMILAR_IMAGE = 29
         # How much diff of two images will trade as same
         self.DEAD_LOOP_COST_SIMILAR_IMAGE = 20.0
         # How many continous time have been checked
@@ -181,6 +181,7 @@ class Decisionor:
         # Init default value
         tmpl = {
             "Name": "",
+            "StopOnFail": "Yes",
             "PreloadTime": 0,
             "Command": "Goto",
             "PostloadTime": 0,
@@ -201,6 +202,7 @@ class Decisionor:
         # Init default value
         tmpl = {
             "Name": "",
+            "StopOnFail": "Yes",
             "PreloadTime": 0,
             "Command": "Click",
             "PostloadTime": 0,
@@ -245,6 +247,7 @@ class Decisionor:
         # Init default value
         tmpl = {
             "Name": "",
+            "StopOnFail": "Yes",
             "PreloadTime": 0,
             "Command": "Find",
             "FocusArea": None,
@@ -470,16 +473,17 @@ class Decisionor:
             diff = imdiff.diffByHistogram(im, self.gLastImage, tagsDetail['image_size'])
             if diff <= self.DEAD_LOOP_COST_SIMILAR_IMAGE:
                 self.gSimilarTimes = self.gSimilarTimes+1
-                self.logger.debug('Found %d times similar image,latest diff: %f > %f'\
+                self.logger.debug('Found %d times similar image,latest diff: %f<=%f'\
                                 %(self.gSimilarTimes, diff, self.DEAD_LOOP_COST_SIMILAR_IMAGE))
             else:
                 self.gSimilarTimes = 0
         if self.gSimilarTimes >= self.DEAD_LOOP_NUM_SIMILAR_IMAGE:
             self.logger.debug('Found %d times similar image,exceed: %d'\
                             %(self.gSimilarTimes, self.DEAD_LOOP_NUM_SIMILAR_IMAGE))
-            return False
+            self.gSimilarTimes = 0
+            return True
         self.gLastImage = tagsDetail['image_np']
-        return True
+        return False
 
     def check_conditions(self, bookname, conditions, tagsDetail, tagsFound):
         # Check conditions is ok or not.
@@ -579,6 +583,8 @@ class Decisionor:
     # Sequence units will excuted one by one without any condition
     # KeyBody units will excuted ONLY first succeed unit and break
     # KeyBody unit of first non-succeed unit will be adjust to the end
+    # Action units will excuted one by one following unit.StopOnFail
+    # StopOnFail=='Yes' by default, then:
     # Action units will excuted one by one until met a failed unit
     # Action units will excuted ONLY if keybody condition is satified
     def decision_do(self, tagsDetail, bookname, tagsFound):
@@ -594,8 +600,8 @@ class Decisionor:
                 condStatus, deadLoop = self.check_conditions(bookname, kunit['Conditions'], tagsDetail, tagsFound)
                 if deadLoop:
                     self.logger.warn('DEAD ACTION: Dead Loop book:%s, conditions:%s, \
-                                      tagsFound:%s, tagsDetail:%s, conditionStatus:%s'\
-                        %(bookname, kunit['Conditions'], tagsFound, tagsDetail, condStatus))
+                                      tagsFound:%s, conditionStatus:%s'\
+                        %(bookname, kunit['Conditions'], tagsFound, condStatus))
                     # Dead loop, try froce update everything
                     return True
                 if not condStatus:
@@ -724,12 +730,15 @@ class Decisionor:
             # call one action from actions list
             # Any one of action can change jobUpdated to true
             temp = self.do_action(bookname, action, tagsDetail, tagsFound)
+            # Action units will excuted one by one following unit.StopOnFail
+            # StopOnFail=='Yes' by default, then:
             # Action units will excuted one by one until met a failed unit
             # Action units will excuted ONLY if keybody condition is satified
             if temp == True:
                 jobUpdated = True
             else:
-                break
+                if action['StopOnFail'] == 'Yes':
+                    break
         return jobUpdated
             
     def do_action_goto(self, current_book, action):
@@ -779,8 +788,8 @@ class Decisionor:
             condStatus, deadLoop  = self.check_conditions(bookname, judgeConditions, tagsDetail, tagsFound)
             if deadLoop:
                 self.logger.warn('DEAD ACTION: (SELECT)Dead Loop in book:%s, judgeConditions:%s, \
-                                  tagsFound:%s, tagsDetail:%s, conditionStatus:%s'\
-                    %(bookname, judgeConditions, tagsFound, tagsDetail, condStatus))
+                                  tagsFound:%s, conditionStatus:%s'\
+                    %(bookname, judgeConditions, tagsFound, condStatus))
                 # Dead loop, try froce update everything
                 return True
             if jobUpdated:
