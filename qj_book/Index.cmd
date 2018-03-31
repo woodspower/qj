@@ -1,6 +1,6 @@
 {
     "InferenceName": "Index",
-    "PopupInferenceName": "Popup",
+    "PopupBook": "Popup",
     "Sequence": [
         {
             "Name": "Go to one of following GUI",

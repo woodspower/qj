@@ -177,7 +177,7 @@ class Decisionor:
 
     # Check valid of the aciton_goto diction , init default value
     # Format is as tmpl.
-    def init_book_keybody_action_goto(self, cunit, kunit):
+    def init_book_keybody_action_goto(self, cunit, kunit=None):
         # Init default value
         tmpl = {
             "Name": "",
@@ -454,10 +454,10 @@ class Decisionor:
                                   %(bookname,fname,book['InferenceName']))
             # Index.cmd must provide default Popup inference file
             # which is used to detect general popup things
-            if 'PopupInferenceName' in d:
-                book['PopupInferenceName'] = d['PopupInferenceName']
+            if 'PopupBook' in d:
+                book['PopupBook'] = d['PopupBook']
             else:
-                book['PopupInferenceName'] = self.gBooks['Index']['PopupInferenceName']
+                book['PopupBook'] = self.gBooks['Index']['PopupBook']
             self.init_book(d)
             book['Sequence'] = d['Sequence']
             # How much jobs already done in this book
@@ -629,7 +629,8 @@ class Decisionor:
         book = self.gBooks[bookname]
         # check whether need to preload the data
         if action['PreloadTime'] != 0:
-            print 'pre reload', action['PreloadTime']
+            self.logger.debug('DETECT: Pre-reload img of book:%s, delay time:%s ms'\
+                               %(bookname, action['PreloadTime']))
             time.sleep(action['PreloadTime']/1000)
             newDetail, newFound, err = self.imgDetect(self.gDetectors[book['InferenceName']])
             if not newFound:
@@ -646,7 +647,7 @@ class Decisionor:
             if temp == True:
                 jobUpdated = True
         elif action[u'Command'] == u'Goto':
-            temp = self.do_action_goto(bookname, action, tagsDetail, tagsFound)
+            temp = self.do_action_goto(bookname, action)
             if temp == True:
                 jobUpdated = True
         elif action[u'Command'] == u'Find':
@@ -656,7 +657,24 @@ class Decisionor:
         else:
             self.logger.info('DO ACTION:%s, PARAM:this action is tbd..., BODY:%s'\
                             %(action['Command'],str(action)))
-        # Nested call 'SubActions' if 'Actions' success
+        # check and process popup
+        # nested call Goto 'PopupBook' book if 'Actions' success
+        if jobUpdated:
+            self.logger.debug('DETECT: Check popup in book:%s \
+                               using PopupInference book:%s \
+                               after action:%s'\
+                               %(bookname, book['PopupBook'], action))
+            # prepare and goto popup book
+            # assume popup book name equal to popup inference name
+            # WARNING: popup book should not use goto,otherwise it will deadlock 
+            tmplAction = {
+                "Command": "Goto",
+                "BookName": book['PopupBook']
+            }
+            self.init_book_keybody_action_goto(tmplAction)
+            # popup action can not change status of jobUpdated
+            self.do_action_goto(bookname, tmplAction)
+        # nested call 'SubActions' if 'Actions' success
         if jobUpdated and 'SubActions' in action:
             subActions = action['SubActions']
             self.logger.debug('entering subActions: %s'%(subActions))
@@ -665,7 +683,8 @@ class Decisionor:
                 self.do_action(bookname, subAction, tagsDetail, tagsFound)
         # check whether need to postload the data
         if action['PostloadTime'] != 0:
-            print 'post reload', action['PostloadTime']
+            self.logger.debug('DETECT: Post-reload img of book:%s, delay time:%s ms'\
+                               %(bookname, action['PostloadTime']))
             time.sleep(action['PostloadTime']/1000)
             newDetail, newFound, err = self.imgDetect(self.gDetectors[book['InferenceName']])
             if not newFound:
@@ -713,7 +732,7 @@ class Decisionor:
                 break
         return jobUpdated
             
-    def do_action_goto(self, current_book, action, tagsDetail, tagsFound):
+    def do_action_goto(self, current_book, action):
         jobUpdated = False
         # Nested call decision_loop('GotoBook')
         # If the 'GotoBook' find nothing, will come back to UpperBook.
