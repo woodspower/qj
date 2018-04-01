@@ -7,6 +7,7 @@
             {
                 "Conditions": {
                     "Allow": {
+                        "Percent":0.1,
                         "Tags": [
                             "Confirm",
                             "dNext",

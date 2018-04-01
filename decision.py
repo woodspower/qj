@@ -480,7 +480,6 @@ class Decisionor:
         if self.gSimilarTimes >= self.DEAD_LOOP_NUM_SIMILAR_IMAGE:
             self.logger.debug('Found %d times similar image,exceed: %d'\
                             %(self.gSimilarTimes, self.DEAD_LOOP_NUM_SIMILAR_IMAGE))
-            self.gSimilarTimes = 0
             return True
         self.gLastImage = tagsDetail['image_np']
         return False
@@ -602,8 +601,10 @@ class Decisionor:
                     self.logger.warn('DEAD ACTION: Dead Loop book:%s, conditions:%s, \
                                       tagsFound:%s, conditionStatus:%s'\
                         %(bookname, kunit['Conditions'], tagsFound, condStatus))
-                    # Dead loop, try froce update everything
-                    return True
+                    # Dead loop, put this kunit to end and try froce update everything
+                    jobUpdated = True
+                    kunit2move = kunit
+                    break
                 if not condStatus:
                     # adjust priority of the current condition unit, put it to end of list
                     # it is very dangours to change multiple list member at same time
@@ -668,7 +669,8 @@ class Decisionor:
                             %(action['Command'],str(action)))
         # check and process popup
         # nested call Goto 'PopupBook' book if 'Actions' success
-        if jobUpdated:
+        # do not call popup if it is inside popup book
+        if jobUpdated and bookname!=book['PopupBook']:
             self.logger.debug('DETECT: Check popup in book:%s \
                                using PopupInference book:%s \
                                after action:%s'\
@@ -767,7 +769,6 @@ class Decisionor:
         return jobUpdated
 
     def do_action_find(self, bookname, action, tagsDetail, tagsFound):
-        jobUpdated = False
         leftestChecked = False
         # action['Find'] will re-use Click action function
         #NOTE: PreloadTime MUST be 0 before call Click action
@@ -804,11 +805,11 @@ class Decisionor:
                     %(bookname, judgeConditions, tagsFound, condStatus))
                 # Dead loop, try froce update everything
                 return True
-            if jobUpdated:
+            if condStatus:
                 param = 'Found a satisfied tag'
                 self.logger.info('DO ACTION:Find, PARAM:%s, BODY:%s'\
                                 %(param, action))
-                return jobUpdated
+                return True
             # Go and find next one to be selected
             area = action['FocusArea']
             weight = {}

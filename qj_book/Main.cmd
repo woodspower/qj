@@ -8,17 +8,7 @@
                     "Name": "ZhuXian Task",
                     "Conditions": {
                             "Allow":{ "Tags": "tZhuXian" },
-                            "Disallow": [
-                                {
-                                    "Name": "cancel when task not ready",
-                                    "Tags": [ "tTaskNotReady" ]
-                                },
-                                {
-                                    "Name": "cancel when fightoff for 60secs",
-                                    "Seconds": 60,
-                                    "Tags": [ "FightOff" ]
-                                }
-                            ]
+                            "Disallow": { "Tags": "tTaskNotReady" }
                     },
                     "Actions": {
                             "Command": "Click",
@@ -49,6 +39,17 @@
                     ]
                 }
             ]
+        },
+        {
+            "Name": "Skip Guider if exist",
+            "KeyBody": {
+                    "Conditions": { 
+                        "Allow": { "Tags": [ "tTiaoGuoYinDao"] }
+                    },
+                    "Actions": { 
+                        "Command": "Click" 
+                    }
+                }
         },
         {
             "Name": "Start fight in case not auto started in Copier mode",
@@ -379,6 +380,15 @@
                             "Duration": "2~5"
                         }
                     ]
+                },
+                {
+                    "Conditions": {
+                            "Allow": { "Tags": [ "Guider", "LeaveBox" ] }
+                        },
+                    "Actions": {
+                            "Command": "Click",
+                            "StartTag": [ "LeaveBox" ]
+                        }
                 }
             ]
         },

@@ -122,6 +122,18 @@
                     ]
                 }
             ]
+        },
+        {
+            "Name": "Check Popup frequencely",
+            "KeyBody": {
+                "Conditions": { 
+                    "Allow": { "Tags": [] } 
+                },
+                "Actions": {
+                    "Command": "Goto",
+                    "BookName": "StartGame"
+                }
+            }
         }
     ]
 }

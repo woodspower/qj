@@ -24,25 +24,19 @@
                     {
                         "Name":"A2: Select the task",
                         "Command": "Click",
-                        "PostloadTime": 1000,
                         "FocusArea": [0.4, 0, 0.6, 1]
                     },
                     {
-                        "Name":"A3: Start the task",
+                        "Name":"A3: Choose task level",
                         "Command": "Click",
-                        "StartTag": "CopierGo",
-                        "PostloadTime": 1000
+                        "StartTag": ["ModeNightmare","ModeDiffcult","ModeEasy"]
+                    },
+                    {
+                        "Name":"A4: Start the task",
+                        "Command": "Click",
+                        "StartTag": "CopierGo"
                     }
                 ]
-            }
-        },
-        {
-            "Name": "S2: Gernal confirmation",
-            "KeyBody": {
-                "Conditions": { 
-                    "Allow": {"Tags": ["iConfirm", "iCancel", "iReject"]} 
-                },
-                "Actions": { "Command": "Click" }
             }
         }
     ]
