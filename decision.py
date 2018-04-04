@@ -551,9 +551,9 @@ class Decisionor:
                 if allow_result:
                     break
                 allow_num_req = int(len(allow[u'Tags'])*allow[u'Percent'])
-                if allow_num_req == 0:
-                    # At least one tag should be found
-                    allow_num_req = 1
+#                if allow_num_req == 0:
+#                    # At least one tag should be found
+#                    allow_num_req = 1
                 allow_num = 0
                 taglist = []
                 for tag in allow[u'Tags']:
