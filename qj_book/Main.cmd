@@ -16,16 +16,6 @@
                         }
                 },
                 {
-                    "Name": "RiChang Task",
-                    "Conditions": {
-                            "Allow": { "Tags": "tRiChang" }
-                        },
-                    "Actions": {
-                            "Command": "Click",
-                            "DecisionPeriod": 5000
-                        }
-                },
-                {
                     "Name": "Select Copier Menu",
                     "Conditions": {
                             "Jobs": {"Bookname": "CopierMenu"},
@@ -37,6 +27,16 @@
                             "DecisionPeriod": 5000
                         }
                     ]
+                },
+                {
+                    "Name": "RiChang Task",
+                    "Conditions": {
+                            "Allow": { "Tags": "tRiChang" }
+                        },
+                    "Actions": {
+                            "Command": "Click",
+                            "DecisionPeriod": 5000
+                        }
                 }
             ]
         },
