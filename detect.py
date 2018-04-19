@@ -105,7 +105,7 @@ class Detector:
     # The first dimension is pixel of each Heigh point,
     # The second dimension is pixel of each Width point,
     # The last dimension is pixel of is each (R,G,B) point.
-    def detect(self, image_np):
+    def detect(self, image_np, visualize=False):
         start_time = time.time()
         # Expand dimensions since the model expects images to have shape: [1, None, None, 3]
         image_np_expanded = np.expand_dims(image_np, axis=0)
@@ -119,16 +119,19 @@ class Detector:
 
         detected_time = time.time()
         self.logger.debug("detecting image time: %f"%(detected_time-start_time))
-        # Visualization of the results of a detection.
-#        vis_util.visualize_boxes_and_labels_on_image_array(
-#          image_np,
-#          np.squeeze(boxes),
-#          np.squeeze(classes).astype(np.int32),
-#          np.squeeze(scores),
-#          self.category_index,
-#          use_normalized_coordinates=True,
-#          line_thickness=8)
-
+        if visualize:
+            # Visualization of the results of a detection.
+            print 'yes.. visualize'
+            vis_util.visualize_boxes_and_labels_on_image_array(
+              image_np,
+              np.squeeze(boxes),
+              np.squeeze(classes).astype(np.int32),
+              np.squeeze(scores),
+              self.category_index,
+              use_normalized_coordinates=True,
+              min_score_thresh=0.03,
+              line_thickness=8)
+        # translate numpy to python list and return
         boxes = np.squeeze(boxes).tolist()
         scores = np.squeeze(scores).tolist()
         classes = np.squeeze(classes).astype(np.int32).tolist()
