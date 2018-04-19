@@ -17,5 +17,10 @@
         "InferencePath": "/home/leo/qj/object_detection/data",
         "InferenceFile": "$InferencePath/$InferenceName/inference_ssd/frozen_inference_graph.pb",
         "LabelMapFile": "$InferencePath/$InferenceName/pascal_label_map.pbtxt"
+    },
+    "socr": {
+        "InferencePath": "/home/leo/qj/object_detection/data",
+        "InferenceFile": "$InferencePath/$InferenceName/inference_ssd/frozen_inference_graph.pb",
+        "LabelMapFile": "$InferencePath/$InferenceName/pascal_label_map.pbtxt"
     }
 }
