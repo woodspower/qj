@@ -27,6 +27,9 @@ class Decisionor:
     def __init__(self, device, bookPath):
         self.gStartTime = time.time()
         self.gDevice = device
+        self.ip = '0.0.0.0'
+        if device:
+            self.ip = device.ip
         self.gBooks = {}
         self.gDetectors = {}
         self.ACTION_NUM_OF_SINGLE_LIST_MAX = 10
@@ -43,7 +46,7 @@ class Decisionor:
         # Record every last action in the actions list
         self.gLastActions = [None]*self.ACTION_NUM_OF_SINGLE_LIST_MAX
         # call each init function
-        self.logger = logging.getLogger('decision-%s'%(device.ip))
+        self.logger = logging.getLogger('decision-%s'%(self.ip))
         self.logger.setLevel(logging.DEBUG)
         self.loadInfModels(bookPath)
         self.loadCmdBook(bookPath)
@@ -136,11 +139,52 @@ class Decisionor:
             allow['Tags'] = [allow['Tags']]
 
     # Check valid of the diction , initial default value
+    # Format is as tmpl.
+    def init_book_keybody_condition_eval(self, evaluate, cunit):
+        # Init default value from template
+        tmpl = {
+            "Name": "",
+            "Inference": None,
+            "Match": None,
+            "Area": [],
+            "Checks": []
+        }
+        for key in tmpl:
+            # Set default value for evaluate
+            if not key in evaluate:
+                evaluate[key] = tmpl[key]
+            # Some field should not use default
+            assert evaluate[key] != None, \
+                "key:%s MUST set a value in evaluate body:%s"%(key,evaluate)
+        # Unify the following field to list
+        if not isinstance(evaluate['Checks'], list):
+            evaluate['Checks'] = [evaluate['Checks']]
+        # If not set Area, use condition unit's FocusArea
+        if not evaluate['Area']:
+            evaluate['Area'] = cunit['FocusArea']
+        else:
+            rxmin,rymin,rxmax,rymax = evaluate['Area']
+            # e.g. "Area":[0.484,0.694,0.563,0.833]
+            assert (rxmin<=rxmax and rymin<=rymax),\
+            "Prepares[%s], Area:%s MUST be [rxmin,rymin,rxmax,rymax] in body %s"\
+                    %(evaluate['name'], evaluate['Area'], cunit)
+        # Check format of Data using re.compile and store it 
+        # e.g.
+        # "Match" : ".*(?P<left>[0-9])/(?P<total>[0-9])"
+        evaluate['Re'] = re.compile(evaluate['Match'])
+        # Check format of Check
+        # e.g.
+        # "Checks": ["left<total", "total<=10"]
+        # TBD
+
+
+    # Check valid of the diction , initial default value
     # Format is as tmpl:
     def init_book_keybody_condition(self, cunit, kunit):
         # Init default value from template
         tmpl = {
             "Name": "",
+            "Evals": [],
             "Allow": [],
             "Jobs": [],
             "Disallow": [],
@@ -160,20 +204,21 @@ class Decisionor:
             cunit['Jobs'] = [cunit['Jobs']]
         if not isinstance(cunit['Disallow'], list):
             cunit['Disallow'] = [cunit['Disallow']]
+        if not isinstance(cunit['Evals'], list):
+            cunit['Evals'] = [cunit['Evals']]
         # Need do some special init .
         rxmin,rymin,rxmax,rymax = cunit['FocusArea']
         assert (rxmin<=rxmax and rymin<=rymax),\
         "FocusArea:%s MUST be [rxmin,rymin,rxmax,rymax] in body %s"\
                 %(cunit['FocusArea'], cunit)
-
         for allow in cunit['Allow']:
             self.init_book_keybody_condition_allow(allow)
-
         for disallow in cunit['Disallow']:
             self.init_book_keybody_condition_disallow(disallow)
-
         for job in cunit['Jobs']:
             self.init_book_keybody_condition_job(job)
+        for evaluate in cunit['Evals']:
+            self.init_book_keybody_condition_eval(evaluate, cunit)
 
     # Check valid of the aciton_goto diction , init default value
     # Format is as tmpl.
@@ -395,7 +440,7 @@ class Decisionor:
                 detector['InferenceFile'] = infFile
                 detector['LabelMapFile'] = mapFile
                 # create a detector
-                detectorName = self.gDevice.ip+'-'+infName
+                detectorName = self.ip+'-'+infName
                 detector['Detector'] = Detector(detectorName, infFile, mapFile)
 
     # substitute $VAR with proper string
@@ -502,6 +547,11 @@ class Decisionor:
                 job_forbid = True
                 break
             tagsNew = self.tagsAdjustByArea(tagsFound, cond['FocusArea'])
+            # check cond['Evals']
+            if 'Evals' in cond and cond['Evals']:
+                if not self.evalText(tagsDetail['image_np'], cond['Evals']):
+                    job_forbid = True
+                    break
             # check Job status of other book if required
             for job in cond['Jobs']:
                 if job_forbid:
@@ -627,7 +677,128 @@ class Decisionor:
                 bunit['KeyBody'].append(kunit2move)
                 kunit2move = {}
         return jobUpdated
+
+    def getNumpyArea(self, imNP, area):
+        heigh, width, _ = imNP.shape
+        rxmin,rymin,rxmax,rymax = area
+        xmin = int(width*rxmin)
+        ymin = int(heigh*rymin)
+        xmax = int(width*rxmax)
+        ymax = int(heigh*rymax)
+        return imNP[ymin:ymax+1,xmin:xmax+1]
+
+    # Text Reconginition
+    # NOTE: this function can be nested called when subactions inside action
+    # param imNP,imSize is the image numpy data and size to be detected
+    # param inference is the inference book to be used
+    # param evaluates is a list of [{'Match':xxx, 'Area':xxx}], e.g.
+    ## "Match" : [".*(?P<left>[0-9])/(?P<total>[0-9])"]
+    ## "Area" : [0.484,0.694,0.563,0.833]
+    def evalText(self, imNP, evaluates):
+        self.logger.debug('entering evaluates:%s'%(evaluates))
+        if not imNP.any():
+            self.logger.warn('bad param imNP when call evalText')
+            return False
+        if not evaluates:
+            self.logger.warn('bad param evaluates:%s when call evalText'%(evaluates))
+            return False
+        # get Text for each evaluate condition
+        for evaluate in evaluates:
+            inference = evaluate['Inference']
+            if not inference in self.gDetectors:
+                self.logger.warn('bad param inference:%s when call evalText'%(inference))
+                return False
+            areaNP = self.getNumpyArea(imNP, evaluate['Area'])
+            print "==============imNP:", imNP.shape
+            print "==============areaNP:", areaNP.shape
+            # newFound[labelName] = { 'poses':[],'scores':[],'boxes':[]}
+            newDetail, newFound, err = self.imgDetect(self.gDetectors[inference], areaNP)
+            if not newFound:
+                self.logger.debug('DETECT: text inference:%s do not detect any tags'%(inference))
+                return False
+            # generate texts from tags
+            texts = self.textGenerate(newFound)
+            # 'Re' is compiled from 'Match'
+#            try:
+            # change texts dict to text string
+            texts = ''.join(texts.values())
+            self.logger.debug('DETECT: text match: re:%s, texts:%s'%(evaluate['Match'], texts))
+            m = evaluate['Re'].match(texts)
+            if not m:
+                return False
+            self.logger.debug('DETECT: text match: m.groups:%s'%(str(m.groups())))
+            e = re.sub('([a-zA-Z_]+[0-9]*)', r'%s("\1")'%("m.group"), evaluate['Checks'][0])
+            self.logger.debug('DETECT: text eval: e:%s, checks:%s'%(e,evaluate['Checks']))
+            result = eval(e)
+            self.logger.debug('DETECT: text eval: result:%s'%(result))
+            if not result:
+               return False
+#            except:
+#                self.logger.debug('EVAL: text evulate failed, evaluate:%s, texts:%s'\
+#                                    %(evaluate, texts))
+#                return False
+        # if pass all evaluates, return True
+        return True
+                    
             
+    def getLineNumber(self, lines, newY):
+        """ lines is a dict:
+            {   (0.1,0.2):"abc",
+                (0.3,0.35):"def"}
+            newY is a tuple of the new line key:
+            (ry1, ry2)
+        """
+        existLineNum = len(lines)
+        lineKeys = lines.keys()
+        # Attemp to add new line key:newY
+        lineKeys.append(newY)
+        newYMin,newYMax = newY
+        sortedKeys = sorted(lineKeys)
+        idx = sortedKeys.index(newY)
+        left = idx-1
+        right = idx+1
+        if left>=0:
+            leftYMin,leftYMax = sortedKeys[left]
+            # check wether it is belong to left line
+            if newYMin<=leftYMax:
+                return sortedKeys[left]
+        if right<len(sortedKeys):
+            rightYMin,rightYMax = sortedKeys[right]
+            # check wether it is belong to right line
+            if newYMax>=rightYMin:
+                return sortedKeys[right]
+        #create a new line
+        lines[newY] = {}
+        return newY
+
+    def textGenerate(self, tagsFound):
+        lines = {}
+        texts = {}
+        # Get Chars of each line
+        for tag in tagsFound:
+            for box in tagsFound[tag]['boxes']:
+                ry1,rx1,ry2,rx2 = box
+                lineNum = self.getLineNumber(lines, (ry1,ry2))
+                columNum = (rx1,rx2)
+                lines[lineNum][columNum] = tag
+        # comibine text from chars of each line
+        for line in sorted(lines):
+            texts[line] = ""
+            leftColum = (0,0)
+            for colum in sorted(lines[line]):
+                # cacluate how many spaces between char
+                # assume space size equal to dY/2 of curr Char
+                #leftSize=leftColum[1]-leftColum[0]
+                #currSize=colum[1]-colum[0]
+                #minSpaceSize=leftSize+currSize
+                minSpaceSize=(line[1]-line[0])/2
+                spaceNum=int((colum[0]-leftColum[1])/minSpaceSize)
+                texts[line] = texts[line]+spaceNum*' '+lines[line][colum]
+                leftColum = colum
+        self.logger.debug('TEXT: sorted text chars:%s'%(lines))
+        self.logger.debug('TEXT: text generate:%s'%(texts))
+        return texts
+
     # do one action
     # NOTE: this function can be nested called when subactions inside action
     # param idx is the tag index when multiple tags are exist
@@ -1008,17 +1179,22 @@ class Decisionor:
         return tagsNew
 
 
-    def imgDetect(self, detector):
+    def imgDetect(self, detector, img_np=np.array([])):
         tagsDetail = {}
         #store the detected tags summerized info
         tagsFound = {}
-        self.getDelta("Before Call getNumpyData")
-        err, image_size, img_np = self.gDevice.getNumpyData()
-        self.logger.debug('DETECT: getNumpyData used:%s seconds, image size:%s'\
-                        %(self.getDelta(),image_size))
-        if err:
-            self.logger.warn('DETECT: getNumpyData failed,error:%s'%(err))
-            return tagsDetail, tagsFound, err
+        err = None
+        if not img_np.any():
+            self.getDelta("Before Call getNumpyData")
+            err, image_size, img_np = self.gDevice.getNumpyData()
+            self.logger.debug('DETECT: getNumpyData used:%s seconds, image size:%s'\
+                            %(self.getDelta(),image_size))
+            if err:
+                self.logger.warn('DETECT: getNumpyData failed,error:%s'%(err))
+                return tagsDetail, tagsFound, err
+        else: 
+            heigh,width,_ = img_np.shape
+            image_size = (width, heigh)
         self.getDelta("Before Call detection")
         (image_np, tag_boxes, tag_scores, tag_classes, tag_num) = detector['Detector'].detect(img_np)
         self.logger.debug('DETECT: inference name:%s, detect used:%s seconds'\
@@ -1030,7 +1206,7 @@ class Decisionor:
                       'tag_classes':tag_classes,
                       'tag_num':tag_num}
         #box should have minimun 80% possibility
-        min_score_thresh = .8
+        min_score_thresh = .2
         for i in range(tag_num):
             labelName = detector['ID2Label'][tag_classes[i]]
             if(tag_scores[i]<min_score_thresh): 
