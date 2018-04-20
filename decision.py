@@ -717,11 +717,13 @@ class Decisionor:
                 self.logger.debug('DETECT: text inference:%s do not detect any tags'%(inference))
                 return False
             # generate texts from tags
-            texts = self.textGenerate(newFound)
+            textDict = self.textGenerate(newFound)
             # 'Re' is compiled from 'Match'
 #            try:
             # change texts dict to text string
-            texts = ''.join(texts.values())
+            texts = ''
+            for line in sorted(textDict):
+                texts = texts+textDict[line]+'\r\n'
             self.logger.debug('DETECT: text match: re:%s, texts:%s'%(evaluate['Match'], texts))
             m = evaluate['Re'].match(texts)
             if not m:
