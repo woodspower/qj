@@ -719,26 +719,28 @@ class Decisionor:
             # generate texts from tags
             textDict = self.textGenerate(newFound)
             # 'Re' is compiled from 'Match'
-#            try:
-            # change texts dict to text string
-            texts = ''
-            for line in sorted(textDict):
-                texts = texts+textDict[line]+'\r\n'
-            self.logger.debug('DETECT: text match: re:%s, texts:%s'%(evaluate['Match'], texts))
-            m = evaluate['Re'].match(texts)
-            if not m:
+            try:
+                # change texts dict to text string
+                texts = ''
+                for line in sorted(textDict):
+                    texts = texts+textDict[line]+'\r\n'
+                self.logger.debug('DETECT: text match: re:%s, texts:%s'%(evaluate['Match'], texts))
+                m = evaluate['Re'].match(texts)
+                if not m:
+                    return False
+                self.logger.debug('EVAL: text match: m.groups:%s'%(str(m.groups())))
+                # evaluate each check expression
+                for check in evaluate['Checks']:
+                    e = re.sub('([a-zA-Z_]+[0-9]*)', r'%s("\1")'%("m.group"), check)
+                    self.logger.debug('EVAL: check expression subsitute: e:%s, check:%s'%(e,check))
+                    result = eval(e)
+                    self.logger.debug('EVAL: check expression eval: result:%s'%(result))
+                    if not result:
+                       return False
+            except:
+                self.logger.debug('EVAL: text evaulate exception, evaluate:%s, texts:%s'\
+                                    %(evaluate, texts))
                 return False
-            self.logger.debug('DETECT: text match: m.groups:%s'%(str(m.groups())))
-            e = re.sub('([a-zA-Z_]+[0-9]*)', r'%s("\1")'%("m.group"), evaluate['Checks'][0])
-            self.logger.debug('DETECT: text eval: e:%s, checks:%s'%(e,evaluate['Checks']))
-            result = eval(e)
-            self.logger.debug('DETECT: text eval: result:%s'%(result))
-            if not result:
-               return False
-#            except:
-#                self.logger.debug('EVAL: text evulate failed, evaluate:%s, texts:%s'\
-#                                    %(evaluate, texts))
-#                return False
         # if pass all evaluates, return True
         return True
                     
@@ -793,7 +795,8 @@ class Decisionor:
                 #leftSize=leftColum[1]-leftColum[0]
                 #currSize=colum[1]-colum[0]
                 #minSpaceSize=leftSize+currSize
-                minSpaceSize=(line[1]-line[0])/2
+                minSpaceSize=(line[1]-line[0])/3
+                if minSpaceSize<0.01: minSpaceSize=0.01
                 spaceNum=int((colum[0]-leftColum[1])/minSpaceSize)
                 texts[line] = texts[line]+spaceNum*' '+lines[line][colum]
                 leftColum = colum

@@ -18,13 +18,11 @@
                             },
                         "JudgeConditions":{
                             "Evals": {
-                                "Inference": "Movie",
+                                "Inference": "socr",
                                 "Match": ".*(?P<left>[0-9])/(?P<total>[0-9])",
                                 "Area": [0.484,0.694,0.563,0.833],
                                 "Checks":"left<total"
-                            },
-                            "Allow": {"Tags": "TimesOn"},
-                            "FocusArea": [0.4, 0, 0.6, 1]
+                            }
                         }
                     },
                     {
