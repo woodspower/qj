@@ -4,7 +4,7 @@ sys.path.append('..')
 import os, fnmatch
 import re
 import logging
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 logging.basicConfig(stream=sys.stdout,
                     format='%(asctime)s %(levelname)-6s %(name)-12s %(message)s',
@@ -22,6 +22,16 @@ from device import Device
 socrCases = [
     {
         "Datas":"./im",
+        "Eval": {
+            "Inference": "socr",
+            "Match": ".*(?P<left>[0-9])/(?P<total>[0-9])",
+            #"Area": [0.,0.,1.,1.],
+            "Area": [0.484,0.694,0.563,0.833],
+            "Checks":"left<total"
+        }
+    },
+    {
+        "Datas":"./im2",
         "Eval": {
             "Inference": "socr",
             "Match": ".*(?P<left>[0-9])/(?P<total>[0-9])",
@@ -62,7 +72,22 @@ def main(argv):
                 im = Image.open(os.path.join(root, filename))
                 imNP = np.asarray(im)
                 print '==============eval %s========================='%(filename)
-                decisionor.evalText(imNP, [case['Eval']])
+                textInfo = {}
+                decisionor.evalText(imNP, [case['Eval']], textInfo)
+                for evaluate in [case['Eval']]:
+                    if not textInfo or not textInfo[str(evaluate)]:
+                        continue
+                    areaNP = textInfo[str(evaluate)]['areaNP']
+                    textDict = textInfo[str(evaluate)]['textDict']
+                    im = Image.fromarray(areaNP)
+                    d = ImageDraw.Draw(im)
+                    width, heigh = im.size
+                    for line in textDict:
+                        for column in textDict[line]:
+                            x1,x2 = column[0]*width, column[1]*width
+                            y1,y2 = line[0]*heigh, line[1]*heigh
+                            d.rectangle([x1,y1,x2,y2], outline=(0,0,0))
+                    im.show()
                 #infName = case['Evals']['Inference']
                 #detector = decisionor.gDetectors['socr']
                 #print '==============using decisionor.imgDetect========================='

@@ -694,7 +694,7 @@ class Decisionor:
     # param evaluates is a list of [{'Match':xxx, 'Area':xxx}], e.g.
     ## "Match" : [".*(?P<left>[0-9])/(?P<total>[0-9])"]
     ## "Area" : [0.484,0.694,0.563,0.833]
-    def evalText(self, imNP, evaluates):
+    def evalText(self, imNP, evaluates, textInfo=None):
         self.logger.debug('entering evaluates:%s'%(evaluates))
         if not imNP.any():
             self.logger.warn('bad param imNP when call evalText')
@@ -704,11 +704,19 @@ class Decisionor:
             return False
         # get Text for each evaluate condition
         for evaluate in evaluates:
+            # return debug info if required
+            if textInfo != None:
+                textInfo[str(evaluate)] = {}
+                textInfo[str(evaluate)]['areaNP'] = []
+                textInfo[str(evaluate)]['textDict'] = {}
             inference = evaluate['Inference']
             if not inference in self.gDetectors:
                 self.logger.warn('bad param inference:%s when call evalText'%(inference))
                 return False
             areaNP = self.getNumpyArea(imNP, evaluate['Area'])
+            # return debug info if required
+            if textInfo:
+                textInfo[str(evaluate)]['areaNP'] = areaNP
             print "==============imNP:", imNP.shape
             print "==============areaNP:", areaNP.shape
             # newFound[labelName] = { 'poses':[],'scores':[],'boxes':[]}
@@ -717,13 +725,12 @@ class Decisionor:
                 self.logger.debug('DETECT: text inference:%s do not detect any tags'%(inference))
                 return False
             # generate texts from tags
-            textDict = self.textGenerate(newFound)
+            texts, textDict = self.textGenerate(newFound)
+            # return debug info if required
+            if textInfo:
+                textInfo[str(evaluate)]['textDict'] = textDict
             # 'Re' is compiled from 'Match'
             try:
-                # change texts dict to text string
-                texts = ''
-                for line in sorted(textDict):
-                    texts = texts+textDict[line]+'\r\n'
                 self.logger.debug('DETECT: text match: re:%s, texts:%s'%(evaluate['Match'], texts))
                 m = evaluate['Re'].match(texts)
                 if not m:
@@ -777,7 +784,7 @@ class Decisionor:
 
     def textGenerate(self, tagsFound):
         lines = {}
-        texts = {}
+        texts = ''
         # Get Chars of each line
         for tag in tagsFound:
             for box in tagsFound[tag]['boxes']:
@@ -785,9 +792,8 @@ class Decisionor:
                 lineNum = self.getLineNumber(lines, (ry1,ry2))
                 columNum = (rx1,rx2)
                 lines[lineNum][columNum] = tag
-        # comibine text from chars of each line
+        # comibine text from chars
         for line in sorted(lines):
-            texts[line] = ""
             leftColum = (0,0)
             for colum in sorted(lines[line]):
                 # cacluate how many spaces between char
@@ -798,11 +804,14 @@ class Decisionor:
                 minSpaceSize=(line[1]-line[0])/3
                 if minSpaceSize<0.01: minSpaceSize=0.01
                 spaceNum=int((colum[0]-leftColum[1])/minSpaceSize)
-                texts[line] = texts[line]+spaceNum*' '+lines[line][colum]
+                texts = texts+spaceNum*' '+lines[line][colum]
                 leftColum = colum
+            # add \r\n at the end of each line
+            texts = texts + '\r\n'
         self.logger.debug('TEXT: sorted text chars:%s'%(lines))
         self.logger.debug('TEXT: text generate:%s'%(texts))
-        return texts
+        return texts, lines
+
 
     # do one action
     # NOTE: this function can be nested called when subactions inside action
